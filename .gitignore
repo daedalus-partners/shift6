@@ -1,0 +1,59 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+.vite/
+coverage/
+/.parcel-cache
+
+# Build artifacts
+frontend/dist/
+frontend/.vite/
+backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Python virtualenv
+.venv/
+venv/
+ENV/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Docker
+**/.dockerignore
+**/.env.docker
+
+# Alembic cache
+backend/alembic/*.pyc
+backend/alembic/__pycache__/
+
+# Data volumes
+backend/data/
+/data/
+uploads/
+
+# Misc
+*.pid
+*.seed

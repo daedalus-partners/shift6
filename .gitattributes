@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+*.py diff=python
+*.md diff=markdown
+*.ts diff=javascript
+*.tsx diff=javascript
+*.json linguist-language=JSON
