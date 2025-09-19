@@ -7,9 +7,10 @@ from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from .db import SessionLocal
-from .models import KnowledgeFile, KnowledgeChunk
+from .models import KnowledgeFile, KnowledgeChunk, KnowledgeEmbedding
 from .schemas import KnowledgeNoteCreate, KnowledgeFileOut
 
 UPLOAD_DIR = "/data/uploads"
@@ -26,13 +27,13 @@ def get_db():
         db.close()
 
 
-def _chunk_text(text: str, max_chars: int = 1200, overlap: int = 100) -> List[str]:
+def _chunk_text(text_src: str, max_chars: int = 1200, overlap: int = 100) -> List[str]:
     chunks: List[str] = []
     start = 0
-    n = len(text)
+    n = len(text_src)
     while start < n:
         end = min(n, start + max_chars)
-        chunk = text[start:end]
+        chunk = text_src[start:end]
         chunks.append(chunk)
         if end == n:
             break
@@ -78,7 +79,7 @@ def upload_file(client_id: int, file: UploadFile = File(...), db: Session = Depe
     with open(fpath, "wb") as f:
         f.write(content)
 
-    text = content.decode(errors="ignore") if file.content_type.startswith("text/") else ""
+    text_content = content.decode(errors="ignore") if file.content_type.startswith("text/") else ""
 
     kf = KnowledgeFile(
         client_id=client_id,
@@ -88,14 +89,14 @@ def upload_file(client_id: int, file: UploadFile = File(...), db: Session = Depe
         bytes_size=len(content),
         sha256=sha256,
         uploaded_at=datetime.utcnow(),
-        text=text or None,
+        text=text_content or None,
     )
     db.add(kf)
     db.commit()
     db.refresh(kf)
 
-    if text:
-        for idx, chunk in enumerate(_chunk_text(text)):
+    if text_content:
+        for idx, chunk in enumerate(_chunk_text(text_content)):
             db.add(
                 KnowledgeChunk(
                     file_id=kf.id,
@@ -121,8 +122,19 @@ def delete_knowledge(client_id: int, file_id: int, db: Session = Depends(get_db)
     kf = db.query(KnowledgeFile).filter(KnowledgeFile.id == file_id, KnowledgeFile.client_id == client_id).first()
     if not kf:
         raise HTTPException(status_code=404, detail="not found")
-    # delete chunks
-    db.query(KnowledgeChunk).filter(KnowledgeChunk.file_id == file_id).delete()
+    # delete embeddings tied to chunks for this file (join delete)
+    db.execute(
+        text(
+            "DELETE FROM knowledge_embeddings USING knowledge_chunks "
+            "WHERE knowledge_embeddings.chunk_id = knowledge_chunks.id "
+            "AND knowledge_chunks.file_id = :fid"
+        ),
+        {"fid": file_id},
+    )
+    db.commit()
+    # delete chunks then file
+    db.query(KnowledgeChunk).filter(KnowledgeChunk.file_id == file_id).delete(synchronize_session=False)
+    db.commit()
     db.delete(kf)
     db.commit()
     return {"ok": True}

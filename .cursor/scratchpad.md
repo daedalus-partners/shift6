@@ -267,11 +267,11 @@ Local run commands:
 ### Project Status Board
 - [x] Repo scaffolding complete
 - [x] DB schema + migrations in place
-- [ ] Embedding pipeline working
+- [x] Embedding pipeline working
 - [x] Knowledge CRUD + auto RAG updates (manual notes + file upload + chunking)
-- [ ] Style + Sample CRUD
-- [ ] Retrieval + prompt builder
-- [ ] OpenRouter streaming wired
+- [x] Style + Sample CRUD
+- [x] Retrieval + prompt builder
+- [x] OpenRouter streaming wired (non-streaming completion with SSE-chunked output)
 - [ ] Frontend panels + chat UI
 - [ ] System prompts folder + CLI
 - [x] Docker Compose up locally

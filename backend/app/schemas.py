@@ -33,3 +33,35 @@ class KnowledgeFileOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StyleCreate(BaseModel):
+    label: Optional[str] = None
+    text: str
+
+
+class StyleOut(BaseModel):
+    id: int
+    client_id: int
+    label: Optional[str] = None
+    text: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SampleQuoteCreate(BaseModel):
+    source: Optional[str] = None
+    text: str
+
+
+class SampleQuoteOut(BaseModel):
+    id: int
+    client_id: int
+    source: Optional[str] = None
+    text: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
