@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -17,6 +17,9 @@ class Client(Base):
 
 class KnowledgeFile(Base):
     __tablename__ = "knowledge_files"
+    __table_args__ = (
+        UniqueConstraint("client_id", "sha256", name="uq_knowledge_client_sha256"),
+    )
     id = Column(Integer, primary_key=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
     source_type = Column(String(8), nullable=False, default="file")  # file|note

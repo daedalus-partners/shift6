@@ -5,7 +5,8 @@ import os
 from datetime import datetime
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import logging
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -70,16 +71,43 @@ def create_note(client_id: int, payload: KnowledgeNoteCreate, db: Session = Depe
     return kf
 
 
-@router.post("/{client_id}/upload", response_model=KnowledgeFileOut)
-def upload_file(client_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+logger = logging.getLogger("knowledge.upload")
+
+
+@router.post("/{client_id}/upload", response_model=KnowledgeFileOut, status_code=201)
+def upload_file(client_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
     content = file.file.read()
+    if not content:
+        logger.warning("empty upload: client_id=%s filename=%s content_type=%s", client_id, file.filename, file.content_type)
+        raise HTTPException(status_code=400, detail="empty file")
     sha256 = hashlib.sha256(content).hexdigest()
+
+    # duplicate detection per client by file content hash
+    exists = (
+        db.query(KnowledgeFile)
+        .filter(KnowledgeFile.client_id == client_id, KnowledgeFile.sha256 == sha256)
+        .first()
+    )
+    if exists:
+        logger.info("duplicate upload: client_id=%s filename=%s sha256=%s", client_id, file.filename, sha256[:12])
+        raise HTTPException(status_code=409, detail="duplicate file")
+
     fname = f"{sha256[:16]}_{file.filename}"
     fpath = os.path.join(UPLOAD_DIR, fname)
     with open(fpath, "wb") as f:
         f.write(content)
 
-    text_content = content.decode(errors="ignore") if file.content_type.startswith("text/") else ""
+    text_content = content.decode(errors="ignore") if (file.content_type or "").startswith("text/") else ""
+
+    logger.info(
+        "uploaded: client_id=%s filename=%s bytes=%s mime=%s sha256=%s user_agent=%s",
+        client_id,
+        file.filename,
+        len(content),
+        file.content_type,
+        sha256[:12],
+        request.headers.get("user-agent", "-")[:80],
+    )
 
     kf = KnowledgeFile(
         client_id=client_id,

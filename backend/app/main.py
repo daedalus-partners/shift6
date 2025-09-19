@@ -11,15 +11,29 @@ from .routers_generate import router as generate_router
 
 app = FastAPI(title="Shift6 Client Quote Generator API")
 
-allowed_origins = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173").split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+auth_mode = os.getenv("AUTH_MODE", "none")
+allowed_origins_env = os.getenv(
+    "CORS_ALLOW_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1",
 )
+allowed_origins = allowed_origins_env.split(",") if allowed_origins_env else []
+
+if auth_mode == "none":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in allowed_origins if origin.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(clients_router)
 app.include_router(knowledge_router)

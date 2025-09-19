@@ -7,22 +7,13 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
-      '/health': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/clients': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/knowledge': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/generate': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:8000',
-        changeOrigin: true,
-      },
+      '/health': { target: 'http://backend:8000', changeOrigin: true },
+      '/clients': { target: 'http://backend:8000', changeOrigin: true },
+      '/knowledge': { target: 'http://backend:8000', changeOrigin: true },
+      '/styles': { target: 'http://backend:8000', changeOrigin: true },
+      '/samples': { target: 'http://backend:8000', changeOrigin: true },
+      '/retrieval': { target: 'http://backend:8000', changeOrigin: true },
+      '/generate': { target: 'http://backend:8000', changeOrigin: true },
     },
   },
 })

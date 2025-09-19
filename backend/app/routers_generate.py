@@ -118,3 +118,17 @@ async def generate(client_id: int, q: str, request: Request, db: Session = Depen
         raise HTTPException(status_code=502, detail="OpenRouter completion failed; see server logs for details")
 
     return StreamingResponse(_sse_from_text(content), media_type="text/event-stream")
+
+
+@router.get("/full/{client_id}")
+async def generate_full(client_id: int, q: str, request: Request, db: Session = Depends(get_db)):
+    # Non-streaming variant for clients/environments where EventSource is blocked
+    _, messages = build_prompt(db, client_id, q, use_retrieval=False)
+
+    if not OPENROUTER_API_KEY:
+        return {"content": f"[demo] {q}"}
+
+    content = await nonstream_openrouter(messages)
+    if not content:
+        raise HTTPException(status_code=502, detail="OpenRouter completion failed; see server logs for details")
+    return {"content": content}

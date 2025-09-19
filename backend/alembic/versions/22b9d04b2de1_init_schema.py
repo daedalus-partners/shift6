@@ -47,6 +47,7 @@ def upgrade() -> None:
         sa.Column("text", sa.Text()),
     )
     op.create_index(op.f("ix_knowledge_files_client_id"), "knowledge_files", ["client_id"], unique=False)
+    op.create_unique_constraint("uq_knowledge_client_sha256", "knowledge_files", ["client_id", "sha256"]) 
 
     op.create_table(
         "sample_quotes",
