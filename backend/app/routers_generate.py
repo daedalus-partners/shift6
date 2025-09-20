@@ -10,6 +10,7 @@ import httpx
 
 from .db import SessionLocal
 from .prompt_builder import build_prompt
+from .models import Chat, ChatMessage
 
 router = APIRouter(prefix="/generate", tags=["generate"])
 
@@ -104,26 +105,41 @@ def _sse_from_text(content: str) -> AsyncGenerator[str, None]:
 
 
 @router.get("/{client_id}")
-async def generate(client_id: int, q: str, request: Request, db: Session = Depends(get_db)):
+async def generate(client_id: int, q: str, include_web: bool = False, request: Request = None, db: Session = Depends(get_db)):
     # Build prompt and messages; skip retrieval during generation for robust startup
-    _, messages = build_prompt(db, client_id, q, use_retrieval=False)
+    _, messages = build_prompt(db, client_id, q, use_retrieval=False, include_web=bool(include_web))
 
     if not OPENROUTER_API_KEY:
         async def fake_stream():
             yield f"data: [demo] {q}\n\n"
+        # persist user + assistant demo
+        chat = Chat(client_id=client_id, title=None)
+        db.add(chat)
+        db.commit()
+        db.refresh(chat)
+        db.add(ChatMessage(chat_id=chat.id, client_id=client_id, role="user", content=q))
+        db.add(ChatMessage(chat_id=chat.id, client_id=client_id, role="assistant", content=f"[demo] {q}"))
+        db.commit()
         return StreamingResponse(fake_stream(), media_type="text/event-stream")
 
     content = await nonstream_openrouter(messages)
     if not content:
         raise HTTPException(status_code=502, detail="OpenRouter completion failed; see server logs for details")
-
+    # persist chat
+    chat = Chat(client_id=client_id, title=None)
+    db.add(chat)
+    db.commit()
+    db.refresh(chat)
+    db.add(ChatMessage(chat_id=chat.id, client_id=client_id, role="user", content=q))
+    db.add(ChatMessage(chat_id=chat.id, client_id=client_id, role="assistant", content=content))
+    db.commit()
     return StreamingResponse(_sse_from_text(content), media_type="text/event-stream")
 
 
 @router.get("/full/{client_id}")
-async def generate_full(client_id: int, q: str, request: Request, db: Session = Depends(get_db)):
+async def generate_full(client_id: int, q: str, include_web: bool = False, request: Request = None, db: Session = Depends(get_db)):
     # Non-streaming variant for clients/environments where EventSource is blocked
-    _, messages = build_prompt(db, client_id, q, use_retrieval=False)
+    _, messages = build_prompt(db, client_id, q, use_retrieval=False, include_web=bool(include_web))
 
     if not OPENROUTER_API_KEY:
         return {"content": f"[demo] {q}"}

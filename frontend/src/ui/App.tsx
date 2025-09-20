@@ -36,6 +36,10 @@ export const App: React.FC = () => {
   const [response, setResponse] = useState('')
   const eventSrcRef = useRef<EventSource | null>(null)
   const [dragOver, setDragOver] = useState<boolean>(false)
+  const [messages, setMessages] = useState<Array<{id?:number; role:'user'|'assistant'|'system'; content:string; created_at?:string}>>([])
+  const [typing, setTyping] = useState<boolean>(false)
+  const [errorMsg, setErrorMsg] = useState<string>('')
+  const [useWeb, setUseWeb] = useState<boolean>(false)
 
   useEffect(() => {
     fetch(mk('/health')).then(r => r.json()).then(d => setHealth(d.status ?? 'ok')).catch(() => setHealth('error'))
@@ -58,6 +62,11 @@ export const App: React.FC = () => {
       setKnowledge(k)
       setStyles(s)
       setSamples(q)
+    }).catch(() => {})
+    // load recent chat
+    fetch(mk(`/chat/${clientId}/last`)).then(r => r.json()).then((list:any[]) => {
+      // server returns newest first; show oldest first
+      setMessages((list || []).slice().reverse().map(m => ({ id:m.id, role:m.role, content:m.content, created_at:m.created_at })))
     }).catch(() => {})
   }, [clientId])
 
@@ -232,8 +241,20 @@ export const App: React.FC = () => {
     if (!clientId || !query.trim()) return
     eventSrcRef.current?.close()
     setResponse('')
+    setTyping(true)
+    // optimistic append user message
+    const text = query.trim()
+    setMessages(prev => [...prev, { role:'user', content: text }])
+    setQuery('')
+    const refreshChatLater = () => {
+      if (!clientId) return
+      fetch(mk(`/chat/${clientId}/last`)).then(r => r.json()).then((list:any[]) => {
+        setMessages((list || []).slice().reverse().map(m => ({ id:m.id, role:m.role, content:m.content, created_at:m.created_at })))
+        setTyping(false)
+      }).catch(() => setTyping(false))
+    }
     try {
-      const url = mk(`/generate/${clientId}?q=${encodeURIComponent(query)}`)
+      const url = mk(`/generate/${clientId}?q=${encodeURIComponent(text)}${useWeb ? '&include_web=1' : ''}`)
       const es = new EventSource(url)
       eventSrcRef.current = es
       let gotChunk = false
@@ -253,24 +274,26 @@ export const App: React.FC = () => {
         es.close()
         if (!gotChunk) {
           // Fallback to non-streaming
-          const resp = await fetch(mk(`/generate/full/${clientId}?q=${encodeURIComponent(query)}`))
+          const resp = await fetch(mk(`/generate/full/${clientId}?q=${encodeURIComponent(text)}${useWeb ? '&include_web=1' : ''}`))
           if (resp.ok) {
             const j = await resp.json()
             setResponse(String(j.content || ''))
           } else {
-            setResponse('Error generating response')
+            setErrorMsg('Error generating response')
           }
         }
+        setTimeout(refreshChatLater, 600)
       }
     } catch (e) {
       // direct fallback
-      const resp = await fetch(mk(`/generate/full/${clientId}?q=${encodeURIComponent(query)}`))
+      const resp = await fetch(mk(`/generate/full/${clientId}?q=${encodeURIComponent(text)}${useWeb ? '&include_web=1' : ''}`))
       if (resp.ok) {
         const j = await resp.json()
         setResponse(String(j.content || ''))
       } else {
-        setResponse('Error generating response')
+        setErrorMsg('Error generating response')
       }
+      setTimeout(refreshChatLater, 600)
     }
   }
 
@@ -381,11 +404,35 @@ export const App: React.FC = () => {
         </div>
         <section style={{ border: '1px solid #000', padding: 12, marginTop: 16 }}>
           <h3 style={{ marginTop: 0 }}>Chat</h3>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={useWeb} onChange={e=>setUseWeb(e.target.checked)} />
+              <span style={{ fontSize: 12 }}>Web search</span>
+            </label>
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Paste text or ask for a quote…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px', minHeight: 240, resize: 'both' }} />
+            <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Paste text or ask for a quote…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px', minHeight: 240, resize: 'both' }} onKeyDown={(e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); void onSend(); } }} />
             <button onClick={onSend} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Send</button>
           </div>
-          <div style={{ borderTop: '1px solid #e5e5e5', marginTop: 12, paddingTop: 12, minHeight: 80, whiteSpace: 'pre-wrap' }}>{response}</div>
+          <div style={{ borderTop: '1px solid #e5e5e5', marginTop: 12, paddingTop: 12 }}>
+            <div style={{ marginBottom: 8, fontSize: 12, color: '#555' }}>Recent messages</div>
+            <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #eee', padding: 8 }}>
+              {messages.map((m, i) => (
+                <div key={i} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, color: '#999' }}>{m.role}</div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                </div>
+              ))}
+              {typing && (<div style={{ fontStyle: 'italic', color: '#555' }}>Assistant is typing…</div>)}
+              {response && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#999' }}>assistant (stream)</div>
+                  <div style={{ whiteSpace: 'pre-wrap' }}>{response}</div>
+                </div>
+              )}
+            </div>
+            {errorMsg && <div style={{ marginTop: 8, color: '#b00000' }}>Error: {errorMsg}</div>}
+          </div>
         </section>
       </main>
     </div>

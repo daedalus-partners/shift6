@@ -8,6 +8,8 @@ from .routers_style import router as styles_router
 from .routers_samples import router as samples_router
 from .routers_retrieval import router as retrieval_router
 from .routers_generate import router as generate_router
+from .routers_chat import router as chat_router
+from .routers_prompts import router as prompts_router
 
 app = FastAPI(title="Shift6 Client Quote Generator API")
 
@@ -41,6 +43,8 @@ app.include_router(styles_router)
 app.include_router(samples_router)
 app.include_router(retrieval_router)
 app.include_router(generate_router)
+app.include_router(chat_router)
+app.include_router(prompts_router)
 
 
 @app.get("/health")
