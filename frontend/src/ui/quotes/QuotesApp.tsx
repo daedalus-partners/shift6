@@ -20,7 +20,7 @@ const post = async (url: string, body: FormData, onProgress: (pct: number) => vo
 }
 const mk = (path: string) => `${apiBase}${path}`
 
-export const App: React.FC = () => {
+export const QuotesApp: React.FC = () => {
   const [health, setHealth] = useState<string>('checking…')
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState<number | null>(null)
@@ -299,13 +299,29 @@ export const App: React.FC = () => {
 
   const uploaderRef = useRef<HTMLInputElement | null>(null)
 
+  const addClientFlow = async () => {
+    const name = window.prompt('Client name?')
+    if (!name) return
+    const suggested = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'client'
+    const slug = window.prompt('Client slug?', suggested) || suggested
+    const res = await fetch(mk('/clients/'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, slug }) })
+    if (!res.ok) {
+      alert('Could not create client (may already exist).')
+    }
+    const list: Client[] = await fetch(mk('/clients/')).then(r=>r.json())
+    setClients(list)
+    const created = list.find(c=>c.slug===slug)
+    if (created) setClientId(created.id)
+  }
+
   return (
     <div style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif', color: '#000', background: '#fff', minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid #e5e5e5', padding: '16px 24px', display: 'flex', alignItems: 'baseline', gap: 16 }}>
+      <header style={{ borderBottom: '1px solid #9e9e9e', padding: '16px 24px', display: 'flex', alignItems: 'baseline', gap: 16 }}>
         <h1 style={{ margin: 0, fontWeight: 600, flex: 1 }}>Shift6 – Client Quote Generator</h1>
         <div style={{ fontSize: 14, color: '#555' }}>API health: {health}</div>
-        <select value={clientId ?? ''} onChange={(e) => setClientId(Number(e.target.value))} style={{ padding: '6px 10px', border: '1px solid #000', background: '#fff' }}>
-          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <select value={String(clientId ?? '')} onChange={(e) => { const v=e.target.value; if (v==='__add__'){ void addClientFlow(); } else { setClientId(Number(v)); } }} style={{ padding: '6px 10px', border: '1px solid #000', background: '#fff' }}>
+          {clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+          <option value="__add__">+ Add client…</option>
         </select>
       </header>
       <main style={{ padding: 24 }}>
@@ -362,7 +378,7 @@ export const App: React.FC = () => {
             )}
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
               {knowledge.map(k => (
-                <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e5e5e5', padding: '8px 0' }}>
+                <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{k.source_type === 'note' ? (k.text?.slice(0, 40) || 'note') : (k.filename || 'file')}</span>
                   <button onClick={() => onDeleteKnowledge(k.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
@@ -378,7 +394,7 @@ export const App: React.FC = () => {
             </div>
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
               {styles.map(s => (
-                <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e5e5e5', padding: '8px 0' }}>
+                <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{s.label}: {s.text}</span>
                   <button onClick={() => onDeleteStyle(s.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
@@ -394,7 +410,7 @@ export const App: React.FC = () => {
             </div>
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
               {samples.map(s => (
-                <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e5e5e5', padding: '8px 0' }}>
+                <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{s.source ? `${s.source}: ` : ''}{s.text}</span>
                   <button onClick={() => onDeleteSample(s.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
@@ -414,9 +430,9 @@ export const App: React.FC = () => {
             <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Paste text or ask for a quote…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px', minHeight: 240, resize: 'both' }} onKeyDown={(e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); void onSend(); } }} />
             <button onClick={onSend} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Send</button>
           </div>
-          <div style={{ borderTop: '1px solid #e5e5e5', marginTop: 12, paddingTop: 12 }}>
+          <div style={{ borderTop: '1px solid #9e9e9e', marginTop: 12, paddingTop: 12 }}>
             <div style={{ marginBottom: 8, fontSize: 12, color: '#555' }}>Recent messages</div>
-            <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #eee', padding: 8 }}>
+            <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #9e9e9e', padding: 8 }}>
               {messages.map((m, i) => (
                 <div key={i} style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 12, color: '#999' }}>{m.role}</div>
@@ -438,3 +454,5 @@ export const App: React.FC = () => {
     </div>
   )
 }
+
+

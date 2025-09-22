@@ -2,14 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
 
-from .routers_clients import router as clients_router
-from .routers_knowledge import router as knowledge_router
-from .routers_style import router as styles_router
-from .routers_samples import router as samples_router
-from .routers_retrieval import router as retrieval_router
-from .routers_generate import router as generate_router
-from .routers_chat import router as chat_router
-from .routers_prompts import router as prompts_router
+from .api.v1.router import router as api_v1_router
+from .api.v1.email.router import router as email_router
+from .api.v1.coverage.router import router as coverage_router
+from .api.v1.settings.router import router as settings_router
 
 app = FastAPI(title="Shift6 Client Quote Generator API")
 
@@ -37,14 +33,10 @@ else:
         allow_headers=["*"],
     )
 
-app.include_router(clients_router)
-app.include_router(knowledge_router)
-app.include_router(styles_router)
-app.include_router(samples_router)
-app.include_router(retrieval_router)
-app.include_router(generate_router)
-app.include_router(chat_router)
-app.include_router(prompts_router)
+app.include_router(api_v1_router, prefix="")
+app.include_router(email_router, prefix="/api/v1")
+app.include_router(coverage_router, prefix="/api/v1")
+app.include_router(settings_router, prefix="/api/v1")
 
 
 @app.get("/health")
