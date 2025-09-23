@@ -4,6 +4,8 @@ import os
 import httpx
 from urllib.parse import urljoin
 from .scraper import get_domain, fetch_article_http
+from .exa import fetch_article_via_exa, exa_search
+import re
 
 
 async def try_fetch_about_description(domain: string) -> str | None:  # type: ignore[name-defined]
@@ -35,17 +37,44 @@ async def try_fetch_about_description(domain: string) -> str | None:  # type: ig
 
 
 async def lookup_da_muv(domain: str) -> tuple[str | None, str | None]:
-    # Minimal placeholder; if API keys exist, wire simple GETs
-    # Returning None keeps output clean without fake data
-    return None, None
+    da: str | None = None
+    muv: str | None = None
+    # DA via Moz only
+    moz_q = f"site:moz.com Domain Authority {domain}"
+    for item in await exa_search(moz_q, num_results=3):
+        u = (item.get("url") or "").lower()
+        if not u or "moz.com" not in u:
+            continue
+        text = (item.get("text") or "")
+        m = re.search(r"Domain Authority\s*(\d{1,3})", text, re.IGNORECASE)
+        if m:
+            val = int(m.group(1))
+            if 0 <= val <= 100:
+                da = str(val)
+                break
+    # MUV via SimilarWeb only (look for 'Monthly Unique Visitors')
+    sw_q = f"site:similarweb.com {domain} monthly unique visitors"
+    for item in await exa_search(sw_q, num_results=3):
+        u = (item.get("url") or "").lower()
+        if not u or "similarweb.com" not in u:
+            continue
+        text = (item.get("text") or "")
+        m = re.search(r"monthly\s+unique\s+visitors[^\d]*(\d[\d,.]*\s*[KkMm]?)", text, re.IGNORECASE)
+        if m:
+            muv = m.group(1).strip()
+            break
+    return da, muv
 
 
 async def fetch_or_scrape(url: str) -> tuple[str | None, str | None, str | None, str]:
     domain = get_domain(url)
-    try:
-        title, desc, body = await fetch_article_http(url)
-    except Exception:
-        title, desc, body = None, None, None
+    # Try Exa first
+    title, desc, body = await fetch_article_via_exa(url)
+    if not body:
+        try:
+            title, desc, body = await fetch_article_http(url)
+        except Exception:
+            title, desc, body = None, None, None
     return title, desc, body, domain
 
 

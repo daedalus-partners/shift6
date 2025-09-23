@@ -26,7 +26,14 @@ async def fetch_article_http(url: str) -> tuple[str | None, str | None, str | No
         og = soup.find("meta", attrs={"property": "og:description"})
         if og and og.get("content"):
             desc = og["content"].strip()
-        body_text = "\n".join([p.get_text(" ", strip=True) for p in soup.find_all("p")])
+        # Gather text from common content tags to better capture quoted text
+        content_tags = ["p", "blockquote", "q", "h1", "h2", "h3", "h4", "li"]
+        parts = []
+        for node in soup.find_all(content_tags):
+            t = node.get_text(" ", strip=True)
+            if t:
+                parts.append(t)
+        body_text = "\n".join(parts)
         return title, desc, body_text or None
 
 

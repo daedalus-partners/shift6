@@ -23,9 +23,11 @@ async def summarize_to_markdown(data: dict) -> str:
         return _offline_template(data)
 
     system = (
-        "You are a PR analyst. Generate a concise, well-structured PR coverage email in Markdown with the following sections: "
-        "Headline & Outlet, Outlet Snapshot (description, DA, MUV), Links & Mentions, Sentiment & Message Pull-Through, "
-        "Quote Highlight, Audience / Strategic Value, Performance / Reach. Keep it actionable and under ~250 words."
+        "You are a PR analyst. Generate a concise, well-structured PR coverage email in Markdown using this format: "
+        "<Outlet> — [<Headline>](<URL>) as the first line (outlet first, headline as a hyperlink). "
+        "Then sections: Outlet Snapshot (description, DA, MUV), Links & Mentions (prioritize client-related links), "
+        "Sentiment & Message Pull-Through (expand detail by ~30%), Quote Highlight (use extracted quote verbatim if provided; if not found, use a close paraphrase but mark it clearly as paraphrase), "
+        "Audience / Strategic Value, Performance / Reach. Keep it ≤ 250 words. Bold the DA and MUV values."
     )
     user = (
         f"client_name: {data.get('client_name')}\n"
@@ -37,7 +39,9 @@ async def summarize_to_markdown(data: dict) -> str:
         f"MUV: {data.get('muv') or ''}\n"
         f"mentions: {', '.join(data.get('mentions') or [])}\n"
         f"links: {', '.join(data.get('links') or [])}\n"
+        f"client_links: {', '.join(data.get('client_links') or [])}\n"
         f"article_excerpt: {(data.get('body') or '')[:1200]}\n"
+        f"extracted_best_quote (must use verbatim if provided or write 'No direct quote found'): {data.get('best_quote') or ''}\n"
         "Return only Markdown."
     )
     payload = {
@@ -70,12 +74,15 @@ def _offline_template(d: dict) -> str:
     desc = d.get("outlet_description") or "—"
     links = d.get("links") or []
     mentions = d.get("mentions") or []
+    q = d.get("best_quote") or None
+    url = d.get("url") or "#"
+    client_links = d.get("client_links") or []
     return (
-        f"{title} – {domain}\n\n"
-        f"Outlet Snapshot\n\n- DA {da}, MUV {muv}\n- {desc}\n\n"
-        f"Links & Mentions\n\n- Links: {', '.join(links) or '—'}\n- Mentions: {', '.join(mentions) or '—'}\n\n"
-        f"Sentiment & Message Pull-Through\n\n- (placeholder)\n\n"
-        f"Quote Highlight\n\n- (placeholder)\n\n"
+        f"{domain} — [{title}]({url})\n\n"
+        f"Outlet Snapshot\n\n- **DA {da}**, **MUV {muv}**\n- {desc}\n\n"
+        f"Links & Mentions\n\n- Client Links: {', '.join(client_links) or '—'}\n- Other Links: {', '.join(links) or '—'}\n- Mentions: {', '.join(mentions) or '—'}\n\n"
+        f"Sentiment & Message Pull-Through\n\n- (expanded analysis placeholder)\n\n"
+        f"Quote Highlight\n\n- {q or 'No direct quote found'}\n\n"
         f"Audience / Strategic Value\n\n- (placeholder)\n\n"
         f"Performance / Reach\n\n- (placeholder)\n"
     )
