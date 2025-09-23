@@ -16,3 +16,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 def ensure_vector_extension() -> None:
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

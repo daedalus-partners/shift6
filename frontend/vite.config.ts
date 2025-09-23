@@ -14,6 +14,7 @@ export default defineConfig({
       '/samples': { target: 'http://backend:8000', changeOrigin: true },
       '/retrieval': { target: 'http://backend:8000', changeOrigin: true },
       '/generate': { target: 'http://backend:8000', changeOrigin: true },
+      '/api/v1': { target: 'http://backend:8000', changeOrigin: true },
     },
   },
 })

@@ -6,6 +6,13 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
+# Ensure '/app' (project root in container) is on sys.path so 'app' imports resolve
+import sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]  # /app
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 from app.models import Base
 
 # this is the Alembic Config object, which provides

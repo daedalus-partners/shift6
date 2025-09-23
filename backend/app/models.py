@@ -83,3 +83,35 @@ class ChatMessage(Base):
     role = Column(String(16), nullable=False)  # system|user|assistant
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Article(Base):
+    __tablename__ = "articles"
+    id = Column(Integer, primary_key=True)
+    client_name = Column(String(128), nullable=False, index=True)
+    url = Column(String(1024), nullable=False, unique=True)
+    domain = Column(String(256), index=True)
+    title = Column(String(512))
+    author = Column(String(256))
+    published_at = Column(String(64))
+    description = Column(Text)
+    body = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ArticleEmbedding(Base):
+    __tablename__ = "article_embeddings"
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    embedding = Column(Vector(dim=768))
+
+
+class ArticleSummary(Base):
+    __tablename__ = "article_summaries"
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    markdown = Column(Text, nullable=False)
+    sentiment = Column(String(16))  # Positive|Neutral|Negative
+    da = Column(String(32))  # Domain Authority (string to avoid strict parsing)
+    muv = Column(String(32))  # Monthly Unique Visitors
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
