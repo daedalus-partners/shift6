@@ -1,44 +1,39 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    profiles: ["dev", "prod"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-quotes}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
-    profiles: ["dev", "prod"]
-    env_file: .env
+    expose:
+      - "8000"
     environment:
-      AUTH_MODE: ${AUTH_MODE:-none}
-      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:5173}
+      - AUTH_MODE=${AUTH_MODE}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}
+      - DATABASE_URL=${DATABASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EXA_API_KEY=${EXA_API_KEY}
     depends_on:
-      - postgres
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      postgres:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
-    profiles: ["dev", "prod"]
-    depends_on:
-      - backend
-    ports:
-      - "${FRONTEND_PORT:-5173}:5173"
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    profiles: ["prod"]
-    command: tunnel run
+    expose:
+      - "5173"
     environment:
-      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN}
+      - VITE_API_URL=${VITE_API_URL}
     depends_on:
-      - frontend
       - backend
 
 volumes:

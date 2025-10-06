@@ -6,6 +6,7 @@ from .api.v1.router import router as api_v1_router
 from .api.v1.email.router import router as email_router
 from .api.v1.coverage.router import router as coverage_router
 from .api.v1.settings.router import router as settings_router
+from .routers_retrieval import router as retrieval_router
 
 app = FastAPI(title="Shift6 Client Quote Generator API")
 
@@ -37,6 +38,8 @@ app.include_router(api_v1_router, prefix="")
 app.include_router(email_router, prefix="/api/v1")
 app.include_router(coverage_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
+# Legacy retrieval endpoints used by tests
+app.include_router(retrieval_router, prefix="")
 
 
 @app.get("/health")

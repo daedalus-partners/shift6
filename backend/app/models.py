@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Boolean, Numeric
 from sqlalchemy.orm import declarative_base, relationship
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from uuid import uuid4
 
 Base = declarative_base()
 
@@ -115,3 +117,53 @@ class ArticleSummary(Base):
     da = Column(String(32))  # Domain Authority (string to avoid strict parsing)
     muv = Column(String(32))  # Monthly Unique Visitors
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# Coverage Tracker models
+class Quote(Base):
+    __tablename__ = "quotes"
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    sheet_row_id = Column(Text, unique=True)
+    client_name = Column(Text, nullable=False, index=True)
+    quote_text = Column(Text, nullable=False)
+    state = Column(String(32), nullable=False, default="ACTIVE_HOURLY")
+    added_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    first_hit_at = Column(DateTime(timezone=True))
+    last_hit_at = Column(DateTime(timezone=True))
+    last_checked_at = Column(DateTime(timezone=True))
+    next_run_at = Column(DateTime(timezone=True))
+    hit_count = Column(Integer, default=0)
+    days_without_hit = Column(Integer, default=0)
+    quote_emb = Column(Vector(dim=768))
+
+
+class Hit(Base):
+    __tablename__ = "hits"
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    quote_id = Column(PG_UUID(as_uuid=True), ForeignKey("quotes.id"), index=True)
+    client_name = Column(Text)
+    url = Column(String(1024), unique=True)
+    domain = Column(String(256), index=True)
+    title = Column(String(512))
+    snippet = Column(Text)
+    published_at = Column(DateTime(timezone=True))
+    match_type = Column(String(16))  # exact|partial|paraphrase
+    confidence = Column(Numeric)
+    markdown = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    emailed_at = Column(DateTime(timezone=True))
+
+
+class HitRead(Base):
+    __tablename__ = "hit_reads"
+    hit_id = Column(PG_UUID(as_uuid=True), ForeignKey("hits.id"), primary_key=True)
+    user_id = Column(PG_UUID(as_uuid=True), primary_key=True)
+    read_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+
+class AppSettings(Base):
+    __tablename__ = "app_settings"
+    id = Column(Boolean, primary_key=True, default=True)
+    emails = Column(Text)
+    email_enabled = Column(Boolean, default=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

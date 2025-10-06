@@ -307,3 +307,173 @@ Voice: follow the client’s Style snippets and mimic Sample Quotes tone.
 Rules: be factual per Knowledge; if unsure, ask for clarification; avoid hallucinations.
 Output: a single paragraph under 70 words unless instructed otherwise.
 ```
+
+## Coverage Tracker – Planner Addendum (New Feature)
+
+Last updated: 2025-09-23
+
+### Background and Motivation
+We need an automated coverage monitoring tool that watches a Google Sheet for new quotes per client, searches the web on a cadence, stores matches, and surfaces them in a minimal UI with read-tracking and Markdown summaries. Optional email notifications alert a configured list when new coverage appears.
+
+### Key Challenges and Analysis
+- State machine scheduling across thousands of quotes with different cadences; compute `next_run_at` deterministically and avoid thundering herds.
+- Reliable Google Sheets ingestion and idempotent upserts keyed by `sheet_row_id`.
+- High-precision match adjudication to reduce false positives; combine exact, shingle/Jaccard, embeddings, and Claude adjudication.
+- Exa API variability and quotas; add cached RSS fallback and local validation.
+- Minimal yet useful UI: unread markers, redirect-on-click, and clipboard Markdown.
+- Email: one-time send per hit, robust retries, and safe toggling.
+
+### Data Model (new tables)
+- `quotes` (track quotes from Sheet)
+  - id UUID PK
+  - sheet_row_id TEXT UNIQUE
+  - client_name TEXT NOT NULL
+  - quote_text TEXT NOT NULL
+  - state TEXT NOT NULL DEFAULT 'ACTIVE_HOURLY'
+  - added_at TIMESTAMPTZ DEFAULT now()
+  - first_hit_at TIMESTAMPTZ
+  - last_hit_at TIMESTAMPTZ
+  - last_checked_at TIMESTAMPTZ
+  - next_run_at TIMESTAMPTZ
+  - hit_count INT DEFAULT 0
+  - days_without_hit INT DEFAULT 0
+  - quote_emb VECTOR
+- `hits`
+  - id UUID PK
+  - quote_id UUID REFERENCES quotes(id)
+  - client_name TEXT
+  - url TEXT UNIQUE
+  - domain TEXT
+  - title TEXT
+  - snippet TEXT
+  - published_at TIMESTAMPTZ
+  - match_type TEXT  # exact|partial|paraphrase
+  - confidence NUMERIC
+  - markdown TEXT
+  - created_at TIMESTAMPTZ DEFAULT now()
+- `hit_reads`
+  - hit_id UUID REFERENCES hits(id)
+  - user_id UUID (or global null for single-tenant)
+  - read_at TIMESTAMPTZ
+  - PRIMARY KEY (hit_id, user_id)
+- `app_settings`
+  - id BOOL PRIMARY KEY DEFAULT TRUE
+  - emails TEXT           # comma-separated
+  - email_enabled BOOL DEFAULT FALSE
+  - updated_at TIMESTAMPTZ DEFAULT now()
+
+Indexes:
+- `quotes(next_run_at)`, `quotes(client_name)`, ivfflat on `quote_emb`.
+- `hits(created_at desc)`, `hits(domain)`, `hits(client_name)`.
+
+### Backend Endpoints
+- `POST /ingest/sheets/sync` → upsert quotes from Sheet
+- `POST /search/run-due` → run scheduler cycle now (admin/manual)
+- `GET /coverage` → list hits with optional filters (new only, client, date range); include `is_read`
+- `GET /r/{hit_id}` → mark read + 302 redirect to article URL
+- `GET /coverage/{id}/markdown` → return Markdown summary (generate/cached)
+- `POST /settings/email` → update recipients/toggle
+
+### Scheduler & Cadence State Machine
+- APScheduler job every 5 min: `SELECT * FROM quotes WHERE next_run_at <= now() ORDER BY next_run_at LIMIT N`.
+- Default new quote: `ACTIVE_HOURLY` with `next_run_at = now()`.
+- Transitions:
+  - `ACTIVE_HOURLY` → on first hit: set `first_hit_at`, state=`ACTIVE_DAILY_7D`, set `next_run_at = tomorrow same time`.
+  - `ACTIVE_HOURLY` → if `days_without_hit >= 90`: state=`EXPIRED_WEEKLY`.
+  - `ACTIVE_DAILY_7D` → after 7 consecutive days of checks: state=`ACTIVE_QUARTERLY`.
+  - `ACTIVE_QUARTERLY` → keep quarterly cadence.
+  - `EXPIRED_WEEKLY` → weekly cadence; RSS-only search.
+- After each search, update `last_checked_at`, `last_hit_at` if hit, `hit_count`, `days_without_hit`, and compute next `next_run_at`.
+
+### Search Pipeline
+1) Build constrained queries (always include client_name):
+   - "FULL QUOTE" AND client_name (exact)
+   - If none: 2–3 shingles (7–10 words) AND client_name
+   - If none: client_name only (last 24h) → collect candidates
+2) Primary fetch via Exa with include_text; fallback to cached RSS feeds (per domain) and local page fetch when needed.
+3) Matching logic:
+   - Must contain `client_name`.
+   - If exact substring of `quote_text` → match_type=exact.
+   - Else compute Jaccard(sentence, quote) ≥ 0.6 OR embeddings cosine ≥ 0.78 → tentative.
+   - Tentative → Claude adjudication with JSON return; accept if `match=true` and `confidence ≥ 0.7`.
+4) On accept → upsert `hits` (unique on url); update quote state metrics; optionally create Markdown via OpenRouter summarizer.
+
+### Frontend `/coverage` UI
+- List reverse-chronological hits with:
+  - red exclamation if unread
+  - outlet (favicon + domain), title (click → `/r/{hit_id}`), client name
+  - match type pill, published time
+  - "Copy Markdown" button
+- Filters: [New only], client dropdown, date range; bulk: Mark all read
+- Empty state: “No coverage yet.”
+
+### Email (Step 2)
+- When a new hit is inserted and `email_enabled` is true, send a single email to `app_settings.emails`.
+- Include outlet, title, client, match type, snippet, link to UI and direct article. Ensure idempotence (no repeats per hit).
+
+### Environment Variables (root .env)
+- `GOOGLE_SERVICE_ACCOUNT_JSON` (base64 or path)
+- `GOOGLE_SHEETS_ID`
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL_ID` (verify model list at runtime)
+- `EXA_API_KEY`
+- `SMTP_URL` or `SENDGRID_API_KEY` (choose at impl time)
+
+### DevOps & Compose
+- Add scheduler in backend container (APScheduler inside FastAPI startup).
+- Add migrations for new tables; ensure `vector` extension present.
+- Confirm CORS includes frontend.
+
+### Test Plan & Acceptance Mapping
+- Unit: shingling, Jaccard, cosine thresholding, Claude adjudication parser.
+- Integration: Sheets sync idempotency; search pipeline end-to-end with mocked Exa; hit insertion idempotency; email trigger once.
+- E2E: New Sheet row → new quote `ACTIVE_HOURLY` → synthetic hit found → UI shows unread badge → click marks read and redirects → Markdown copy works.
+
+### Success Criteria
+- All acceptance criteria in the user spec pass via manual/E2E tests.
+- Fresh Docker Compose runs end-to-end using `.env.example`.
+
+### Migration Plan (Coverage tables)
+- Create Alembic migration: `alembic revision -m "coverage tables"`.
+- Upgrade script creates:
+  - `quotes` (columns as specified) with indexes on `(next_run_at)`, `(client_name)`, and vector column `quote_emb` (create IVFFLAT index after data load; optional in a follow-up migration).
+  - `hits` with unique index on `url` and indexes on `(created_at desc)`, `(client_name)`, `(domain)`.
+  - `hit_reads` with PK `(hit_id, user_id)`.
+  - `app_settings` single-row table (`id` default TRUE) with upsert helper in code.
+- Ensure `CREATE EXTENSION IF NOT EXISTS vector` already applied (present). If not, include in migration.
+- Downgrade removes new tables and non-shared indexes in reverse order.
+
+### Coverage Implementation Task Breakdown (Executor-facing)
+1) Backend: Models & Migrations
+   - Define SQLAlchemy models for `quotes`, `hits`, `hit_reads`, `app_settings`.
+   - Generate and apply Alembic migration.
+   - Success: Tables exist; CRUD via SQLAlchemy works in REPL.
+2) Google Sheets Ingest
+   - Service to read rows from `GOOGLE_SHEETS_ID` with service account.
+   - Map header row → fields; upsert by `sheet_row_id` and compute `quote_emb`.
+   - Success: `POST /ingest/sheets/sync` inserts/updates quotes idempotently.
+3) Scheduler & State Machine
+   - APScheduler job every 5 min; select due quotes; compute `next_run_at` per state.
+   - Success: Logs show due selection and state transitions; `next_run_at` updates correctly.
+4) Search & Matching
+   - Exa primary search; RSS fallback; local fetch for candidate articles.
+   - Implement shingling, Jaccard, embeddings cosine; Claude adjudication.
+   - Success: Synthetic fixtures produce expected matches; thresholds tunable via env.
+5) Hits Persistence & Markdown
+   - Upsert new `hits`; generate Markdown via OpenRouter or offline template; store markdown.
+   - Success: `GET /coverage` returns hits with `is_read`; `GET /coverage/{id}/markdown` returns content.
+6) Read Tracking & Redirect
+   - `GET /r/{hit_id}` marks read and 302 to `url`.
+   - Bulk "mark all read" endpoint if needed.
+   - Success: Clicking title in UI updates read state and opens article.
+7) Settings & Email
+   - `POST /settings/email` to update recipients/toggle; env for SMTP or Sendgrid.
+   - Send once per new hit when enabled; idempotency assured.
+   - Success: Email(s) arrive for new hits; no duplicates on reruns.
+8) Frontend `/coverage`
+   - Implement list, filters, unread badge, redirect, copy Markdown.
+   - Success: UI shows data from backend; interactions work.
+9) Docker & Docs
+   - Extend Compose to include scheduler; add `.env.example` vars; update README.
+   - Success: `docker compose --profile dev up` runs end-to-end locally.
+
+Milestone Verification: Map each acceptance criterion to a working demo path, and record a short GIF for UI interactions.

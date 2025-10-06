@@ -9,6 +9,11 @@ from .quotes.chat import router as quotes_chat
 from .quotes.generate import router as quotes_generate
 from .quotes.prompts import router as quotes_prompts
 
+# Coverage domain
+from .coverage.ingest import router as coverage_ingest
+from .coverage.scheduler import router as coverage_scheduler
+from .coverage.router import router as coverage_router
+
 router = APIRouter()
 
 # Keep existing paths as-is to avoid breaking the frontend/tests
@@ -19,5 +24,10 @@ router.include_router(quotes_samples)
 router.include_router(quotes_chat)
 router.include_router(quotes_generate)
 router.include_router(quotes_prompts)
+
+# Coverage paths
+router.include_router(coverage_ingest)
+router.include_router(coverage_scheduler)
+router.include_router(coverage_router)
 
 
