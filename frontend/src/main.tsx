@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client'
 // Quote Generator moved into its own folder
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { EmailApp } from './ui/email/EmailApp'
-import { CoverageApp } from './ui/coverage/CoverageApp'
 import { SettingsApp } from './ui/settings/SettingsApp'
 import { QuotesApp } from './ui/quotes/QuotesApp'
 
@@ -15,7 +14,6 @@ root.render(
         <nav style={{ display: 'flex', gap: 24, padding: '12px 16px', borderBottom: '1px solid #9e9e9e', alignItems: 'center' }}>
           {[
             { to: '/email', label: 'Email Generator' },
-            { to: '/coverage', label: 'Coverage Tracker' },
             { to: '/quotes', label: 'Quote Generator' },
           ].map((item) => (
             <NavLink
@@ -54,7 +52,6 @@ root.render(
         <Routes>
           <Route path="/" element={<Navigate to="/email" replace />} />
           <Route path="/email" element={<EmailApp />} />
-          <Route path="/coverage" element={<CoverageApp />} />
           <Route path="/quotes" element={<QuotesApp />} />
           <Route path="/settings" element={<SettingsApp />} />
         </Routes>
