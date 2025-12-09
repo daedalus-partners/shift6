@@ -319,28 +319,28 @@ export const QuotesApp: React.FC = () => {
       <header style={{ borderBottom: '1px solid #9e9e9e', padding: '16px 24px', display: 'flex', alignItems: 'baseline', gap: 16 }}>
         <h1 style={{ margin: 0, fontWeight: 600, flex: 1 }}>Shift6 – Client Quote Generator</h1>
         <div style={{ fontSize: 14, color: '#555' }}>API health: {health}</div>
-        <select value={String(clientId ?? '')} onChange={(e) => { const v=e.target.value; if (v==='__add__'){ void addClientFlow(); } else { setClientId(Number(v)); } }} style={{ padding: '6px 10px', border: '1px solid #000', background: '#fff' }}>
+        <select value={String(clientId ?? '')} onChange={(e) => { const v=e.target.value; if (v==='__add__'){ void addClientFlow(); } else { setClientId(Number(v)); } }} style={{ padding: '6px 10px', border: '2px solid #000', background: '#fff' }}>
           {clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
           <option value="__add__">+ Add client…</option>
         </select>
       </header>
       <main style={{ padding: 24 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-          <section style={{ border: '1px solid #000', padding: 12 }}>
+          <section style={{ border: '2px solid #000', padding: 12 }}>
             <h3 style={{ marginTop: 0 }}>Knowledge</h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input value={note} onChange={e => setNote(e.target.value)} placeholder="Add note…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px' }} />
-              <button onClick={onAddNote} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
+              <input value={note} onChange={e => setNote(e.target.value)} placeholder="Add note…" style={{ flex: 1, border: '2px solid #000', padding: '6px 8px' }} />
+              <button onClick={onAddNote} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
               <input ref={uploaderRef} type="file" multiple style={{ display: 'none' }} onChange={e => { if (e.target.files) onDropFiles(e.target.files); (e.target as HTMLInputElement).value = '' }} />
-              <button onClick={() => uploaderRef.current?.click()} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Upload</button>
-              <button onClick={() => { dbg('manual start uploads (header)'); void processUploadQueue() }} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Start uploads</button>
+              <button onClick={() => uploaderRef.current?.click()} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Upload</button>
+              <button onClick={() => { dbg('manual start uploads (header)'); void processUploadQueue() }} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Start uploads</button>
             </div>
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer?.files?.length) onDropFiles(e.dataTransfer.files) }}
               style={{
-                border: '1px dashed #000',
+                border: '2px dashed #000',
                 padding: '16px',
                 marginTop: 8,
                 textAlign: 'center',
@@ -362,7 +362,7 @@ export const QuotesApp: React.FC = () => {
                     <li key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                       <span style={{ fontSize: 12, minWidth: 80, textAlign: 'right' }}>{item.status}</span>
-                      <div style={{ width: 120, height: 6, border: '1px solid #000' }}>
+                      <div style={{ width: 120, height: 6, border: '2px solid #000' }}>
                         <div style={{ width: `${item.progress}%`, height: '100%', background: '#000' }} />
                       </div>
                     </li>
@@ -370,8 +370,8 @@ export const QuotesApp: React.FC = () => {
                 </ul>
                 {uploadQueue.some(it => it.status === 'queued') && (
                   <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
-                    <button onClick={() => { dbg('manual start uploads'); void processUploadQueue() }} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Start uploads</button>
-                    <button onClick={() => setUploadQueue([])} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Clear queue</button>
+                    <button onClick={() => { dbg('manual start uploads'); void processUploadQueue() }} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Start uploads</button>
+                    <button onClick={() => setUploadQueue([])} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Clear queue</button>
                   </div>
                 )}
               </div>
@@ -380,45 +380,45 @@ export const QuotesApp: React.FC = () => {
               {knowledge.map(k => (
                 <li key={k.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{k.source_type === 'note' ? (k.text?.slice(0, 40) || 'note') : (k.filename || 'file')}</span>
-                  <button onClick={() => onDeleteKnowledge(k.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
+                  <button onClick={() => onDeleteKnowledge(k.id)} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
               ))}
             </ul>
           </section>
-          <section style={{ border: '1px solid #000', padding: 12 }}>
+          <section style={{ border: '2px solid #000', padding: 12 }}>
             <h3 style={{ marginTop: 0 }}>Style</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={styleLabel} onChange={e => setStyleLabel(e.target.value)} placeholder="Label" style={{ flex: 0.6, border: '1px solid #000', padding: '6px 8px' }} />
-              <input value={styleText} onChange={e => setStyleText(e.target.value)} placeholder="Snippet…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px' }} />
-              <button onClick={onAddStyle} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
+              <input value={styleLabel} onChange={e => setStyleLabel(e.target.value)} placeholder="Label" style={{ flex: 0.6, border: '2px solid #000', padding: '6px 8px' }} />
+              <input value={styleText} onChange={e => setStyleText(e.target.value)} placeholder="Snippet…" style={{ flex: 1, border: '2px solid #000', padding: '6px 8px' }} />
+              <button onClick={onAddStyle} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
             </div>
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
               {styles.map(s => (
                 <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{s.label}: {s.text}</span>
-                  <button onClick={() => onDeleteStyle(s.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
+                  <button onClick={() => onDeleteStyle(s.id)} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
               ))}
             </ul>
           </section>
-          <section style={{ border: '1px solid #000', padding: 12 }}>
+          <section style={{ border: '2px solid #000', padding: 12 }}>
             <h3 style={{ marginTop: 0 }}>Sample Quotes</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <input value={sampleSource} onChange={e => setSampleSource(e.target.value)} placeholder="Source (optional)" style={{ flex: 0.6, border: '1px solid #000', padding: '6px 8px' }} />
-              <input value={sampleText} onChange={e => setSampleText(e.target.value)} placeholder="Quote…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px' }} />
-              <button onClick={onAddSample} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
+              <input value={sampleSource} onChange={e => setSampleSource(e.target.value)} placeholder="Source (optional)" style={{ flex: 0.6, border: '2px solid #000', padding: '6px 8px' }} />
+              <input value={sampleText} onChange={e => setSampleText(e.target.value)} placeholder="Quote…" style={{ flex: 1, border: '2px solid #000', padding: '6px 8px' }} />
+              <button onClick={onAddSample} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Add</button>
             </div>
             <ul style={{ listStyle: 'none', padding: 0, marginTop: 12 }}>
               {samples.map(s => (
                 <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #9e9e9e', padding: '8px 0' }}>
                   <span>{s.source ? `${s.source}: ` : ''}{s.text}</span>
-                  <button onClick={() => onDeleteSample(s.id)} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
+                  <button onClick={() => onDeleteSample(s.id)} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Delete</button>
                 </li>
               ))}
             </ul>
           </section>
         </div>
-        <section style={{ border: '1px solid #000', padding: 12, marginTop: 16 }}>
+        <section style={{ border: '2px solid #000', padding: 12, marginTop: 16 }}>
           <h3 style={{ marginTop: 0 }}>Chat</h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 8 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -427,8 +427,8 @@ export const QuotesApp: React.FC = () => {
             </label>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-            <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Paste text or ask for a quote…" style={{ flex: 1, border: '1px solid #000', padding: '6px 8px', minHeight: 240, resize: 'both' }} onKeyDown={(e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); void onSend(); } }} />
-            <button onClick={onSend} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>Send</button>
+            <textarea value={query} onChange={e => setQuery(e.target.value)} placeholder="Paste text or ask for a quote…" style={{ flex: 1, border: '2px solid #000', padding: '6px 8px', minHeight: 240, resize: 'both' }} onKeyDown={(e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); void onSend(); } }} />
+            <button onClick={onSend} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>Send</button>
           </div>
           <div style={{ borderTop: '1px solid #9e9e9e', marginTop: 12, paddingTop: 12 }}>
             <div style={{ marginBottom: 8, fontSize: 12, color: '#555' }}>Recent messages</div>

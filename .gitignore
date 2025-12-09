@@ -10,7 +10,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-store/
 .vite/
-coverage/
+# Test coverage reports (not our coverage feature)
+/coverage/
+htmlcov/
+.coverage
 /.parcel-cache
 
 # Build artifacts

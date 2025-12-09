@@ -82,16 +82,16 @@ export const EmailApp: React.FC = () => {
     <div style={{ padding: 24 }}>
       <h2 style={{ marginTop: 0 }}>PR Coverage Email</h2>
       <div style={{ border: '1px solid #9e9e9e', padding: 16, display: 'grid', gap: 8 }}>
-        <input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="Client name" style={{ border: '1px solid #000', padding: '6px 8px' }} />
-        <input value={articleUrl} onChange={e=>setArticleUrl(e.target.value)} placeholder="Article URL" style={{ border: '1px solid #000', padding: '6px 8px' }} />
-        <button onClick={onSubmit} disabled={loading} style={{ border: '1px solid #000', background: '#fff', padding: '6px 10px' }}>{loading ? 'Processing…' : 'Generate'}</button>
+        <input value={clientName} onChange={e=>setClientName(e.target.value)} placeholder="Client name" style={{ border: '2px solid #000', padding: '6px 8px' }} />
+        <input value={articleUrl} onChange={e=>setArticleUrl(e.target.value)} placeholder="Article URL" style={{ border: '2px solid #000', padding: '6px 8px' }} />
+        <button onClick={onSubmit} disabled={loading} style={{ border: '2px solid #000', background: '#fff', padding: '6px 10px' }}>{loading ? 'Processing…' : 'Generate'}</button>
         {error && <div style={{ color: '#b00000' }}>{error}</div>}
       </div>
       {result && (
         <div style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0 }}>Generated Email</h3>
-            <button onClick={onCopy} style={{ border: '1px solid #000', background: '#fff', padding: '4px 8px' }}>Copy</button>
+            <button onClick={onCopy} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy</button>
           </div>
           <div style={{ border: '1px solid #9e9e9e', padding: 12 }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
@@ -101,13 +101,13 @@ export const EmailApp: React.FC = () => {
       <section style={{ marginTop: 24 }}>
         <h3 style={{ margin: 0 }}>History</h3>
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search coverage…" style={{ border: '1px solid #000', padding: '6px 8px', flex: 1 }} />
-          <button onClick={onSearch} style={{ border: '1px solid #000', background: '#fff', padding: '6px 8px' }}>Search</button>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search coverage…" style={{ border: '2px solid #000', padding: '6px 8px', flex: 1 }} />
+          <button onClick={onSearch} style={{ border: '2px solid #000', background: '#fff', padding: '6px 8px' }}>Search</button>
         </div>
         <ul style={{ listStyle: 'none', padding: 0, marginTop: 8 }}>
           {history.map(item => (
             <li key={item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', borderTop: '1px solid #9e9e9e', padding: '6px 0' }}>
-              <button onClick={()=>openSummary(item.summary_id || undefined)} style={{ border: '1px solid #000', background: '#fff', padding: '2px 6px' }}>Open</button>
+              <button onClick={()=>openSummary(item.summary_id || undefined)} style={{ border: '2px solid #000', background: '#fff', padding: '2px 6px' }}>Open</button>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || item.url}</span>
               <span style={{ color: '#555', fontSize: 12 }}>{item.domain}</span>
               <span style={{ color: '#777', fontSize: 12 }}>{item.created_at?.slice(0, 19).replace('T',' ')}</span>
