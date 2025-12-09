@@ -1,0 +1,162 @@
+{
+  "repo_name": "shift6-client-quote-generator",
+  "period_slug": "sep-oct-2025",
+  "client_name": "Shift6",
+  "project_name": "Client Quote Generator",
+  "period_display": "Sep 18–Oct 7, 2025",
+  "prepared_date": "Oct 7, 2025",
+  "total_hours": 40,
+  "feature_groups": [
+    {
+      "title": "Project Foundation & Infrastructure",
+      "items": [
+        {
+          "name": "Full-stack application scaffold",
+          "description": "Built complete application architecture with FastAPI backend, React TypeScript frontend, Docker Compose orchestration, PostgreSQL database with vector extensions, and Alembic migrations. Established development and production deployment profiles with Cloudflare tunnel support."
+        },
+        {
+          "name": "Core data models and API structure",
+          "description": "Implemented database schema for clients, knowledge base, quotes, and coverage tracking. Created RESTful API endpoints with proper routing, dependencies, and error handling."
+        }
+      ]
+    },
+    {
+      "title": "Quote Generation System",
+      "items": [
+        {
+          "name": "RAG-powered quote generation",
+          "description": "Built intelligent quote generation engine that uses retrieval-augmented generation to create client quotes based on knowledge base, style guides, and sample quotes. Includes embedding-based semantic search and prompt engineering."
+        },
+        {
+          "name": "Knowledge management",
+          "description": "Implemented knowledge base system for storing and retrieving client information, notes, and context. Includes vector embeddings for semantic search and relevance ranking."
+        },
+        {
+          "name": "Style and prompt customization",
+          "description": "Created system for managing client-specific styles, sample quotes, and custom prompts. Allows fine-tuning of quote tone and content per client requirements."
+        }
+      ]
+    },
+    {
+      "title": "User Interface & Experience",
+      "items": [
+        {
+          "name": "Modern React frontend",
+          "description": "Developed responsive single-page application with Vite, React, and TypeScript. Implemented multi-page navigation for quotes, email processing, coverage tracking, and settings."
+        },
+        {
+          "name": "Chat interface and history",
+          "description": "Added interactive chat functionality with conversation history, allowing users to refine quotes through iterative dialogue. Includes prompt management API for reusable templates."
+        },
+        {
+          "name": "Upload queue and deduplication",
+          "description": "Implemented file upload system with queue management, error handling, and automatic deduplication to prevent duplicate knowledge entries."
+        }
+      ]
+    },
+    {
+      "title": "Email Processing & Analysis",
+      "items": [
+        {
+          "name": "Email scraping and summarization",
+          "description": "Built email processing pipeline that extracts content from articles, generates markdown summaries, and identifies key information. Includes polite scraping with rate limiting and fallback mechanisms."
+        },
+        {
+          "name": "Quote extraction and client linking",
+          "description": "Implemented NLP-powered quote extraction from articles with automatic client name detection and linking. Surfaces relevant quotes with match confidence scoring."
+        },
+        {
+          "name": "Markdown rendering and display",
+          "description": "Added markdown rendering for article summaries with proper formatting, bold highlighting for key metrics (DA/MUV), and clean presentation in the UI."
+        }
+      ]
+    },
+    {
+      "title": "Coverage Tracking System",
+      "items": [
+        {
+          "name": "Automated coverage monitoring",
+          "description": "Built comprehensive coverage tracking system that monitors Google Sheets for new quotes, automatically searches the web on configurable cadences, and stores matches with deduplication. Includes intelligent state machine for managing search frequency based on hit patterns."
+        },
+        {
+          "name": "Advanced matching algorithms",
+          "description": "Implemented multi-stage matching pipeline combining exact substring matching, shingle-based Jaccard similarity, vector embeddings, and AI-powered adjudication to minimize false positives while maximizing coverage detection accuracy."
+        },
+        {
+          "name": "Coverage UI and notifications",
+          "description": "Created coverage dashboard with unread tracking, filtering by client and date range, and one-click article access. Integrated email notifications for new coverage hits with idempotent delivery."
+        }
+      ]
+    }
+  ],
+  "work_log": [
+    {
+      "date": "Sep 18",
+      "hours": 8,
+      "work": [
+        "Project initialization and scaffold",
+        "Docker Compose setup with dev/prod profiles",
+        "Database schema and migrations",
+        "Basic CRUD API endpoints"
+      ]
+    },
+    {
+      "date": "Sep 19",
+      "hours": 6,
+      "work": [
+        "Frontend Vite React TypeScript setup",
+        "Upload queue implementation and fixes",
+        "Chat fallback mechanisms",
+        "Deduplication constraints"
+      ]
+    },
+    {
+      "date": "Sep 20",
+      "hours": 4,
+      "work": [
+        "Chat history functionality",
+        "Prompt management API",
+        "Web toggle and UX improvements"
+      ]
+    },
+    {
+      "date": "Sep 22",
+      "hours": 2,
+      "work": [
+        "Backend code organization by page",
+        "Frontend component restructuring"
+      ]
+    },
+    {
+      "date": "Sep 23",
+      "hours": 8,
+      "work": [
+        "Email markdown rendering",
+        "Backend summarization with URL deduplication",
+        "Quote extraction and NLP processing",
+        "Client link surfacing",
+        "History cap and UI enhancements"
+      ]
+    },
+    {
+      "date": "Oct 6",
+      "hours": 10,
+      "work": [
+        "Coverage tracking database models",
+        "Google Sheets integration",
+        "Search pipeline and matching algorithms",
+        "Coverage UI implementation",
+        "Docker Compose compatibility updates"
+      ]
+    },
+    {
+      "date": "Oct 7",
+      "hours": 2,
+      "work": [
+        "Bug fixes and deployment configuration",
+        "Allowed hosts configuration",
+        "Test cleanup"
+      ]
+    }
+  ]
+}

@@ -26,6 +26,7 @@ root.render(
                 padding: '6px 4px',
                 borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
                 cursor: 'pointer',
+                fontWeight: 'bold',
               })}
               onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
               onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
@@ -42,6 +43,7 @@ root.render(
                 padding: '6px 4px',
                 borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
                 cursor: 'pointer',
+                fontWeight: 'bold',
               })}
               onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
               onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
