@@ -20,21 +20,23 @@ async def fetch_article_http(url: str) -> tuple[str | None, str | None, str | No
     status, html = await cached_get(url, headers=headers)
     if status != 200:
         raise httpx.HTTPStatusError(f"status={status}", request=None, response=None)  # type: ignore[arg-type]
-        soup = BeautifulSoup(html, "html.parser")
-        title = (soup.title.string or "").strip() if soup.title else None
-        desc = None
-        og = soup.find("meta", attrs={"property": "og:description"})
-        if og and og.get("content"):
-            desc = og["content"].strip()
-        # Gather text from common content tags to better capture quoted text
-        content_tags = ["p", "blockquote", "q", "h1", "h2", "h3", "h4", "li"]
-        parts = []
-        for node in soup.find_all(content_tags):
-            t = node.get_text(" ", strip=True)
-            if t:
-                parts.append(t)
-        body_text = "\n".join(parts)
-        return title, desc, body_text or None
+    
+    # Parse the HTML and extract content
+    soup = BeautifulSoup(html, "html.parser")
+    title = (soup.title.string or "").strip() if soup.title else None
+    desc = None
+    og = soup.find("meta", attrs={"property": "og:description"})
+    if og and og.get("content"):
+        desc = og["content"].strip()
+    # Gather text from common content tags to better capture quoted text
+    content_tags = ["p", "blockquote", "q", "h1", "h2", "h3", "h4", "li"]
+    parts = []
+    for node in soup.find_all(content_tags):
+        t = node.get_text(" ", strip=True)
+        if t:
+            parts.append(t)
+    body_text = "\n".join(parts)
+    return title, desc, body_text or None
 
 
 def get_domain(url: str) -> str:

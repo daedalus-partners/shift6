@@ -26,8 +26,10 @@ async def summarize_to_markdown(data: dict) -> str:
         "You are a PR analyst. Generate a concise, well-structured PR coverage email in Markdown using this format: "
         "<Outlet> — [<Headline>](<URL>) as the first line (outlet first, headline as a hyperlink). "
         "Then sections: Outlet Snapshot (description, DA, MUV), Links & Mentions (prioritize client-related links), "
-        "Sentiment & Message Pull-Through (expand detail by ~30%), Quote Highlight (use extracted quote verbatim if provided; if not found, use a close paraphrase but mark it clearly as paraphrase), "
-        "Audience / Strategic Value, Performance / Reach. Keep it ≤ 250 words. Bold the DA and MUV values."
+        "Sentiment & Message Pull-Through (expand detail by ~30%), Quote Highlight, "
+        "Audience / Strategic Value, Performance / Reach. Keep it ≤ 250 words. Bold the DA and MUV values. "
+        "CRITICAL FOR QUOTE HIGHLIGHT: You MUST use the extracted_best_quote EXACTLY as provided - copy it word-for-word in quotation marks. "
+        "Do NOT paraphrase, summarize, or modify the quote in any way. If no quote is provided, write 'No direct quote found'."
     )
     user = (
         f"client_name: {data.get('client_name')}\n"

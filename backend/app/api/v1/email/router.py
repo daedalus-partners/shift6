@@ -1,13 +1,11 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+import re
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.orm import Session
-from ..deps import get_db_dep as get_db  # fix import path; provide Session
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, text as sql_text
+from ..deps import get_db_dep as get_db
 from ....models import Article, ArticleSummary, ArticleEmbedding
 from ....embedding import embed_texts
-from sqlalchemy import text as sql_text
 from ....services.email.metadata import fetch_or_scrape, try_fetch_about_description, lookup_da_muv
 from ....services.email.nlp import extract_mentions_and_links, find_best_quote, classify_sentiment, extract_client_links, approximate_substring
 from ....services.email.summarizer import summarize_to_markdown

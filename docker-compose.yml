@@ -15,13 +15,14 @@ services:
 
   backend:
     build: ./backend
-    expose:
-      - "8000"
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
       - AUTH_MODE=${AUTH_MODE}
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}
       - DATABASE_URL=${DATABASE_URL}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL_ID=${OPENROUTER_MODEL_ID}
       - EXA_API_KEY=${EXA_API_KEY}
     depends_on:
       postgres:
@@ -29,8 +30,8 @@ services:
 
   frontend:
     build: ./frontend
-    expose:
-      - "5173"
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
     environment:
       - VITE_API_URL=${VITE_API_URL}
     depends_on:

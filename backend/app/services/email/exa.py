@@ -7,7 +7,7 @@ import httpx
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 
 
-async def fetch_article_via_exa(url: string) -> tuple[str | None, str | None, str | None]:  # type: ignore[name-defined]
+async def fetch_article_via_exa(url: str) -> tuple[str | None, str | None, str | None]:
     if not EXA_API_KEY:
         return None, None, None
     headers = {
@@ -42,7 +42,7 @@ async def fetch_article_via_exa(url: string) -> tuple[str | None, str | None, st
         return None, None, None
 
 
-async def exa_search(query: string, num_results: int = 3) -> list[dict]:  # type: ignore[name-defined]
+async def exa_search(query: str, num_results: int = 3) -> list[dict]:
     if not EXA_API_KEY:
         return []
     headers = {
