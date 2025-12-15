@@ -5,6 +5,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
+from sqlalchemy import func, case, literal
 from sqlalchemy.orm import Session
 
 from ....db import get_db
@@ -17,6 +18,9 @@ from ....models import Quote
 from ....embedding import embed_texts
 
 router = APIRouter(prefix="/coverage", tags=["Coverage"])
+
+# Single-tenant sentinel user ID for read tracking
+SENTINEL_USER = "00000000-0000-0000-0000-000000000000"
 
 
 @router.get("")
@@ -34,7 +38,20 @@ def list_coverage(
     if limit < 1 or limit > 100:
         limit = 20
 
-    q = db.query(Hit)
+    # Subquery to get read status for each hit (single query, no N+1)
+    read_subq = (
+        db.query(HitRead.hit_id)
+        .filter(HitRead.user_id == SENTINEL_USER)
+        .subquery()
+    )
+
+    # Build base query with LEFT JOIN to read status
+    q = db.query(
+        Hit,
+        case((read_subq.c.hit_id.isnot(None), literal(True)), else_=literal(False)).label("is_read")
+    ).outerjoin(read_subq, Hit.id == read_subq.c.hit_id)
+
+    # Apply filters
     if client:
         q = q.filter(Hit.client_name == client)
     if start:
@@ -49,39 +66,42 @@ def list_coverage(
             q = q.filter(Hit.created_at <= dt)
         except Exception:
             pass
+
+    # Apply new_only filter BEFORE pagination (fixes pagination bug)
+    if new_only:
+        q = q.filter(read_subq.c.hit_id.is_(None))
+
+    # Get total count BEFORE pagination for proper UI
+    total_count = q.count()
+
+    # Apply ordering and pagination
     q = q.order_by(Hit.created_at.desc())
+    rows = q.offset((page - 1) * limit).limit(limit).all()
 
-    # Basic pagination (applied before new_only filter). Frontend can refetch if fewer due to filtering.
-    hits = q.offset((page - 1) * limit).limit(limit).all()
-
-    # For now, single-tenant: unread if no HitRead exists with sentinel user_id
-    sentinel_user = "00000000-0000-0000-0000-000000000000"
+    # Build results
     results = []
-    for h in hits:
-        is_read = (
-            db.query(HitRead)
-            .filter(HitRead.hit_id == h.id, HitRead.user_id == sentinel_user)
-            .first()
-            is not None
-        )
-        if new_only and is_read:
-            continue
-        results.append(
-            {
-                "id": str(h.id),
-                "client_name": h.client_name,
-                "url": h.url,
-                "domain": h.domain,
-                "title": h.title,
-                "snippet": (h.snippet or "")[:280],
-                "match_type": h.match_type,
-                "confidence": float(h.confidence) if h.confidence is not None else None,
-                "published_at": h.published_at.isoformat() if h.published_at else None,
-                "created_at": h.created_at.isoformat() if h.created_at else None,
-                "is_read": is_read,
-            }
-        )
-    return {"items": results, "page": page, "limit": limit, "count": len(results)}
+    for hit, is_read in rows:
+        results.append({
+            "id": str(hit.id),
+            "client_name": hit.client_name,
+            "url": hit.url,
+            "domain": hit.domain,
+            "title": hit.title,
+            "snippet": (hit.snippet or "")[:280],
+            "match_type": hit.match_type,
+            "confidence": float(hit.confidence) if hit.confidence is not None else None,
+            "published_at": hit.published_at.isoformat() if hit.published_at else None,
+            "created_at": hit.created_at.isoformat() if hit.created_at else None,
+            "is_read": is_read,
+        })
+
+    return {
+        "items": results,
+        "page": page,
+        "limit": limit,
+        "count": len(results),
+        "total": total_count,
+    }
 
 
 @router.get("/r/{hit_id}")
@@ -89,9 +109,8 @@ def redirect_and_mark_read(hit_id: str, db: Session = Depends(get_db)):
     h = db.get(Hit, hit_id)
     if not h:
         raise HTTPException(status_code=404, detail="Not found")
-    sentinel_user = "00000000-0000-0000-0000-000000000000"
-    if not db.query(HitRead).filter(HitRead.hit_id == h.id, HitRead.user_id == sentinel_user).first():
-        db.add(HitRead(hit_id=h.id, user_id=sentinel_user, read_at=datetime.utcnow()))  # type: ignore[arg-type]
+    if not db.query(HitRead).filter(HitRead.hit_id == h.id, HitRead.user_id == SENTINEL_USER).first():
+        db.add(HitRead(hit_id=h.id, user_id=SENTINEL_USER, read_at=datetime.utcnow()))  # type: ignore[arg-type]
         db.commit()
     return RedirectResponse(url=h.url, status_code=307)
 
@@ -106,14 +125,25 @@ async def coverage_markdown(hit_id: str, db: Session = Depends(get_db)):
 
 @router.post("/mark-all-read")
 def mark_all_read(db: Session = Depends(get_db)):
-    sentinel_user = "00000000-0000-0000-0000-000000000000"
-    ids = [h.id for h in db.query(Hit.id).all()]
+    # Get all hit IDs that are not already marked as read (single query)
+    already_read_subq = (
+        db.query(HitRead.hit_id)
+        .filter(HitRead.user_id == SENTINEL_USER)
+        .subquery()
+    )
+    unread_hits = (
+        db.query(Hit.id)
+        .outerjoin(already_read_subq, Hit.id == already_read_subq.c.hit_id)
+        .filter(already_read_subq.c.hit_id.is_(None))
+        .all()
+    )
+
     now = datetime.utcnow()
     created = 0
-    for hid in ids:
-        if not db.query(HitRead).filter(HitRead.hit_id == hid, HitRead.user_id == sentinel_user).first():
-            db.add(HitRead(hit_id=hid, user_id=sentinel_user, read_at=now))  # type: ignore[arg-type]
-            created += 1
+    for (hid,) in unread_hits:
+        db.add(HitRead(hit_id=hid, user_id=SENTINEL_USER, read_at=now))  # type: ignore[arg-type]
+        created += 1
+
     if created:
         db.commit()
     return {"updated": created}
@@ -160,8 +190,11 @@ def list_quotes(
     q = db.query(Quote)
     if client:
         q = q.filter(Quote.client_name == client)
-    q = q.order_by(Quote.added_at.desc())
 
+    # Get total count BEFORE pagination
+    total_count = q.count()
+
+    q = q.order_by(Quote.added_at.desc())
     quotes = q.offset((page - 1) * limit).limit(limit).all()
 
     items = []
@@ -181,7 +214,7 @@ def list_quotes(
                 "days_without_hit": qu.days_without_hit,
             }
         )
-    return {"items": items, "page": page, "limit": limit, "count": len(items)}
+    return {"items": items, "page": page, "limit": limit, "count": len(items), "total": total_count}
 
 
 @router.delete("/quotes/{quote_id}")
