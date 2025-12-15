@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 import logging
+import re
 from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,35 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "anthropic/claude-3.7-sonnet")
 # Enable extended thinking - set budget tokens (0 to disable)
 THINKING_BUDGET_TOKENS = int(os.getenv("THINKING_BUDGET_TOKENS", "10000"))
+
+
+def sanitize_em_dashes(text: str) -> str:
+    """
+    Remove em dashes from AI-generated text - they're an AI writing trope.
+    Replaces em dashes (—) and en dashes (–) with commas or removes them contextually.
+    """
+    if not text:
+        return text
+    
+    original = text
+    
+    # Pattern: " — " or " – " (surrounded by spaces) -> ", "
+    text = re.sub(r'\s*[—–]\s*', ', ', text)
+    
+    # Clean up any double commas or comma-space-comma that might result
+    text = re.sub(r',\s*,', ',', text)
+    
+    # Clean up comma before period/question mark/exclamation
+    text = re.sub(r',\s*([.?!])', r'\1', text)
+    
+    # Clean up leading comma after quotes
+    text = re.sub(r'(["\'"])\s*,\s*', r'\1 ', text)
+    
+    # Log if we made changes
+    if text != original:
+        logger.info(f"[SANITIZE] Removed em dashes from output")
+    
+    return text
 
 
 def get_db():
@@ -81,7 +111,9 @@ def _parse_completion(text: str) -> tuple[str | None, str | None]:
             for block in content:
                 if isinstance(block, dict):
                     if block.get("type") == "thinking":
-                        thinking = block.get("thinking", "")
+                        block_thinking = block.get("thinking")
+                        if block_thinking:  # Only update if there's actual content
+                            thinking = block_thinking
                     elif block.get("type") == "text":
                         text_parts.append(block.get("text", ""))
             content = "\n".join(text_parts) if text_parts else None
@@ -106,6 +138,9 @@ async def nonstream_openrouter(messages: list[dict]) -> str | None:
     status, body = await _post_openrouter(payload)
     print(f"[openrouter] status={status} model={OPENROUTER_MODEL_ID}")
     if status == 200:
+        # Log raw response for debugging
+        logger.info(f"[RAW RESPONSE] {body[:2000]}...")
+        
         content, thinking = _parse_completion(body)
         
         # Log thinking for debugging
@@ -115,9 +150,11 @@ async def nonstream_openrouter(messages: list[dict]) -> str | None:
             logger.info("=" * 60)
             logger.info(thinking)
             logger.info("=" * 60)
+        else:
+            logger.info("[THINKING] No thinking content returned in response")
         
         if content:
-            return content
+            return sanitize_em_dashes(content)
         print(f"[openrouter] parse_failed body={body[:400]}")
     else:
         print(f"[openrouter] error body={body[:400]}")
@@ -133,7 +170,7 @@ async def nonstream_openrouter(messages: list[dict]) -> str | None:
         if thinking:
             logger.info("[THINKING - fallback] " + thinking)
         if content:
-            return content
+            return sanitize_em_dashes(content)
         print(f"[openrouter] fallback parse_failed body={body[:400]}")
     else:
         print(f"[openrouter] fallback error body={body[:400]}")

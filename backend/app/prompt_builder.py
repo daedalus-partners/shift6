@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from typing import List, Tuple
+from datetime import datetime
 
 from .models import Client, KnowledgeChunk, KnowledgeEmbedding, StyleSnippet, SampleQuote
 import os
@@ -31,18 +32,25 @@ def retrieve_top_chunks(db: Session, client_id: int, query: str, k: int = 6) -> 
 
 
 def _load_system_prompt(slug: str | None, client_name: str) -> str:
+    # Get current date in a human-readable format
+    current_date = datetime.now().strftime("%B %d, %Y")  # e.g., "December 15, 2025"
+    
     if slug:
         path = os.path.join(os.path.dirname(__file__), "..", "system_prompts", f"{slug}.md")
         path = os.path.abspath(path)
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return f.read().replace("{{CLIENT_NAME}}", client_name)
+                    content = f.read()
+                    content = content.replace("{{CLIENT_NAME}}", client_name)
+                    content = content.replace("{{CURRENT_DATE}}", current_date)
+                    return content
             except Exception:
                 pass
     # default
     return (
         f"You are a media quote assistant for {client_name}.\n"
+        f"Today's date: {current_date}\n"
         f"Produce one press-ready quote, concise, punchy, on-brand. Length ≤ 250 words (prefer ~200).\n"
         f"Return only the quote text."
     )
