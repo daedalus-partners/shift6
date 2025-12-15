@@ -26,7 +26,7 @@ async function fetchHits(params: { new_only?: boolean; client?: string; start?: 
   if (params.limit) q.set('limit', String(params.limit))
   const r = await fetch(`${API_BASE}/coverage?${q.toString()}`)
   if (!r.ok) throw new Error('Failed to load coverage')
-  return (await r.json()) as { items: HitItem[]; page: number; limit: number; count: number }
+  return (await r.json()) as { items: HitItem[]; page: number; limit: number; count: number; total: number }
 }
 
 async function copyMarkdown(id: string) {
@@ -65,6 +65,7 @@ export const CoverageApp: React.FC = () => {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
   const [serverCount, setServerCount] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteText, setPasteText] = useState('')
   const [pasteMode, setPasteMode] = useState<'csv' | 'lines'>('lines')
@@ -88,6 +89,7 @@ export const CoverageApp: React.FC = () => {
   const [quotesPage, setQuotesPage] = useState(1)
   const [quotesLimit, setQuotesLimit] = useState(20)
   const [quotesCount, setQuotesCount] = useState(0)
+  const [quotesTotalCount, setQuotesTotalCount] = useState(0)
 
   const clients = useMemo(() => {
     const set = new Set<string>()
@@ -102,6 +104,7 @@ export const CoverageApp: React.FC = () => {
       const res = await fetchHits({ new_only: newOnly, client: client || undefined, start: dateStart || undefined, end: dateEnd || undefined, page, limit })
       setHits(res.items)
       setServerCount(res.count)
+      setTotalCount(res.total)
     } catch (e: any) {
       setError(e?.message || 'Failed to load')
     } finally {
@@ -109,10 +112,12 @@ export const CoverageApp: React.FC = () => {
     }
   }
 
+  // Reload when filters or pagination change
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (activeTab === 'hits') {
+      load()
+    }
+  }, [newOnly, client, dateStart, dateEnd, page, limit, activeTab])
 
   async function loadQuotes() {
     setLoading(true)
@@ -127,6 +132,7 @@ export const CoverageApp: React.FC = () => {
       const j = await r.json()
       setQuotes(j.items || [])
       setQuotesCount(j.count || 0)
+      setQuotesTotalCount(j.total || 0)
     } catch (e: any) {
       setError(e?.message || 'Failed to load quotes')
     } finally {
@@ -134,12 +140,12 @@ export const CoverageApp: React.FC = () => {
     }
   }
 
+  // Reload quotes when tab or pagination changes
   useEffect(() => {
     if (activeTab === 'quotes') {
       loadQuotes()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab])
+  }, [activeTab, quotesPage, quotesLimit, client])
 
   async function deleteQuote(id: string) {
     try {
@@ -235,13 +241,13 @@ export const CoverageApp: React.FC = () => {
       <h2 style={{ marginTop: 0 }}>Coverage Tracker</h2>
       <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
         <button 
-          onClick={() => { setActiveTab('hits'); load(); }} 
+          onClick={() => setActiveTab('hits')} 
           style={{ fontWeight: activeTab === 'hits' ? 'bold' : 'normal' }}
         >
           Hits
         </button>
         <button 
-          onClick={() => { setActiveTab('quotes'); loadQuotes(); }} 
+          onClick={() => setActiveTab('quotes')} 
           style={{ fontWeight: activeTab === 'quotes' ? 'bold' : 'normal' }}
         >
           Quotes
@@ -251,21 +257,20 @@ export const CoverageApp: React.FC = () => {
       {activeTab === 'hits' && (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={newOnly} onChange={(e) => setNewOnly(e.target.checked)} /> New only
+            <input type="checkbox" checked={newOnly} onChange={(e) => { setNewOnly(e.target.checked); setPage(1) }} /> New only
           </label>
-          <select value={client} onChange={(e) => setClient(e.target.value)}>
+          <select value={client} onChange={(e) => { setClient(e.target.value); setPage(1) }}>
             <option value="">All clients</option>
             {clients.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <input type="date" value={dateStart} onChange={(e) => setDateStart(e.target.value)} />
-          <input type="date" value={dateEnd} onChange={(e) => setDateEnd(e.target.value)} />
-          <button onClick={() => { setPage(1); load() }} disabled={loading}>Apply</button>
+          <input type="date" value={dateStart} onChange={(e) => { setDateStart(e.target.value); setPage(1) }} />
+          <input type="date" value={dateEnd} onChange={(e) => { setDateEnd(e.target.value); setPage(1) }} />
           <button onClick={async () => { if (await markAllRead()) load() }} disabled={loading}>Mark all read</button>
           <button onClick={() => setPasteOpen((v) => !v)} disabled={loading}>{pasteOpen ? 'Close paste' : 'Paste import'}</button>
           <button onClick={insertSampleQuotes} disabled={loading}>Insert sample quotes</button>
-          <button onClick={async () => { try { setLoading(true); setError(null); await runScan(limit); await load() } catch (e: any) { setError(e?.message || 'Scan failed') } finally { setLoading(false) } }} disabled={loading}>Scan now</button>
+          <button onClick={async () => { try { setLoading(true); setError(null); await runScan(limit); load() } catch (e: any) { setError(e?.message || 'Scan failed') } finally { setLoading(false) } }} disabled={loading}>Scan now</button>
           <select value={limit} onChange={(e) => { setLimit(parseInt(e.target.value || '20')); setPage(1) }}>
             <option value={10}>10</option>
             <option value={20}>20</option>
@@ -329,9 +334,11 @@ export const CoverageApp: React.FC = () => {
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-            <button onClick={() => { if (page > 1) { setPage(page - 1); load() } }} disabled={loading || page <= 1}>Prev</button>
-            <div style={{ fontSize: 12, color: '#555' }}>Page {page} • Showing {hits.length} items</div>
-            <button onClick={() => { setPage(page + 1); load() }} disabled={loading || hits.length < limit}>Next</button>
+            <button onClick={() => setPage(page - 1)} disabled={loading || page <= 1}>Prev</button>
+            <div style={{ fontSize: 12, color: '#555' }}>
+              Page {page} of {Math.max(1, Math.ceil(totalCount / limit))} • {totalCount} total items
+            </div>
+            <button onClick={() => setPage(page + 1)} disabled={loading || page >= Math.ceil(totalCount / limit)}>Next</button>
           </div>
         </div>
       ) : null}
@@ -340,7 +347,7 @@ export const CoverageApp: React.FC = () => {
         <div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
             <button onClick={() => setPasteOpen((v) => !v)} disabled={loading}>{pasteOpen ? 'Close' : '+ Add Quotes'}</button>
-            <button onClick={() => loadQuotes()} disabled={loading}>Refresh</button>
+            <button onClick={loadQuotes} disabled={loading}>Refresh</button>
           </div>
 
           {pasteOpen && (
@@ -383,16 +390,18 @@ export const CoverageApp: React.FC = () => {
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-            <button onClick={() => { if (quotesPage > 1) { setQuotesPage(quotesPage - 1); loadQuotes() } }} disabled={loading || quotesPage <= 1}>Prev</button>
-            <div style={{ fontSize: 12, color: '#555' }}>Page {quotesPage} • Showing {quotes.length} items</div>
+            <button onClick={() => setQuotesPage(quotesPage - 1)} disabled={loading || quotesPage <= 1}>Prev</button>
+            <div style={{ fontSize: 12, color: '#555' }}>
+              Page {quotesPage} of {Math.max(1, Math.ceil(quotesTotalCount / quotesLimit))} • {quotesTotalCount} total items
+            </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select value={quotesLimit} onChange={(e) => { setQuotesLimit(parseInt(e.target.value || '20')); setQuotesPage(1); loadQuotes() }}>
+              <select value={quotesLimit} onChange={(e) => { setQuotesLimit(parseInt(e.target.value || '20')); setQuotesPage(1) }}>
                 <option value={10}>10</option>
                 <option value={20}>20</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
               </select>
-              <button onClick={() => { setQuotesPage(quotesPage + 1); loadQuotes() }} disabled={loading || quotes.length < quotesLimit}>Next</button>
+              <button onClick={() => setQuotesPage(quotesPage + 1)} disabled={loading || quotesPage >= Math.ceil(quotesTotalCount / quotesLimit)}>Next</button>
             </div>
           </div>
         </div>
