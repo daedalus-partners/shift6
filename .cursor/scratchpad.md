@@ -278,6 +278,29 @@ Local run commands:
 - [ ] Cloudflare Tunnel + Access configured
 - [ ] Tests + docs
 
+### Coverage Tracker Bug Fixes (Phase 1 - Critical) ✅ COMPLETED
+- [x] Fix pagination bug: new_only filter applied after pagination causing inconsistent page sizes
+- [x] Fix N+1 query: each hit triggers separate DB query for read status (20+ queries/page)  
+- [x] Fix total count: API returns filtered count instead of total, breaking pagination UI
+- [x] Fix frontend state sync: useEffect dependencies incomplete, filters don't trigger reloads
+
+### Phase 1 Implementation Details (2025-12-15)
+**Backend Changes (router.py):**
+- Used LEFT JOIN with subquery to get read status in single query (eliminates N+1)
+- Applied `new_only` filter BEFORE pagination using SQL WHERE clause
+- Added `total` field to API response for proper pagination calculation
+- Created `SENTINEL_USER` constant to avoid magic strings
+- Fixed `mark_all_read` to use efficient single-query approach
+- Added `total` field to `/coverage/quotes` endpoint as well
+
+**Frontend Changes (CoverageApp.tsx):**
+- Added `totalCount` state to track total items across all pages
+- Fixed useEffect dependencies: now includes `newOnly`, `client`, `dateStart`, `dateEnd`, `page`, `limit`, `activeTab`
+- Updated pagination UI to show "Page X of Y • Z total items"
+- Fixed Next button to use total count instead of page size comparison
+- Reset page to 1 when filters change
+- Same fixes applied to quotes tab pagination
+
 ### Current Status / Progress Tracking
 Planner: Document drafted.
 Executor: Dev profile compose created; backend/health OK at http://localhost:8000/health; frontend container running.
@@ -292,6 +315,10 @@ DB: Alembic set up; `vector` extension migration applied; initial schema migrati
 - Keep token budgets strict to avoid truncation by the model.
 - Debounce ingestion UI to prevent duplicate uploads; dedupe by sha256 on backend.
 - Prefer Postgres + pgvector to reduce operational surface area; index tuning matters.
+- Git worktrees don't copy the `.env` file from the main repo - need to manually copy or symlink it.
+- N+1 queries can be fixed by using LEFT JOIN with subqueries to batch-fetch related data.
+- Always apply filters BEFORE pagination, not after, to ensure consistent page sizes.
+- Frontend useEffect dependencies must include all state variables used in the fetch logic.
 
 ### Minimalist UI Notes
 - Colors: pure black/white with subtle gray lines; high contrast; generous spacing.
