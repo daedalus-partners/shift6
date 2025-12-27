@@ -47,6 +47,7 @@ You must **not** claim access to private analytics (GA, server logs) unless the 
 
 **Hard constraints**
 
+* Output must be 100% json. No preamble or followup.
 * Output must be numeric.
 * Always provide a range (low/base/high) and a confidence score.
 * Never pretend precision; use rounded figures.

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import httpx
+import json
+from pathlib import Path
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from .scraper import get_domain, fetch_article_http
@@ -11,6 +13,9 @@ import logging
 
 
 logger = logging.getLogger("metadata.da_muv")
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "anthropic/claude-3.7-sonnet")
 
 
 async def lookup_da_via_openpagerank(clean_domain: str) -> str | None:
@@ -190,10 +195,141 @@ async def lookup_da_muv(domain: str) -> tuple[str | None, str | None]:
         da = await lookup_da_via_exa(clean_domain)
     
     # MUV via Exa search for SimilarWeb data
-    muv = await lookup_muv_via_exa(clean_domain)
+    muv = await estimate_monthly_traffic_via_llm(clean_domain, da)
     
     logger.info("lookup_da_muv result for domain=%s: da=%s muv=%s", clean_domain, da, muv)
-    return da, muv
+    return da, muv.get("estimate").get("base")
+
+
+async def estimate_monthly_traffic_via_llm(
+    domain: str,
+    opr_rank: int | None,
+    country: str = "global",
+    vertical: str | None = None,
+    known_monthly_uniques: int | None = None,
+    timeframe: str = "last 30 days",
+) -> dict | None:
+    """
+    Estimate monthly unique visitors using OpenRouter LLM with monthlytrafficprompt.md.
+    
+    Args:
+        domain: Root domain (e.g., "example.com")
+        opr_rank: OpenPageRank rank/authority score
+        country: ISO country code or "global" (default: "global")
+        vertical: One of [ecommerce, local_service, publisher, saas, marketplace, nonprofit, other]
+        known_monthly_uniques: Optional benchmark value (treated as ground truth)
+        timeframe: "month" or "last 30 days" (default: "last 30 days")
+    
+    Returns:
+        Parsed JSON response with estimate, confidence, evidence, etc., or None on failure
+    """
+    if not OPENROUTER_API_KEY:
+        logger.warning("OpenRouter API key not set, skipping monthly traffic estimation")
+        return None
+    
+    # Load prompt from file
+    # Try multiple path resolutions to handle both local dev and Docker container paths
+    # Local: backend/app/services/email/metadata.py -> backend/system_prompts/
+    # Docker: /app/app/services/email/metadata.py -> /app/system_prompts/
+    possible_paths = [
+        Path(__file__).parent.parent.parent.parent / "system_prompts" / "monthlytrafficprompt.md",  # 4 levels up
+        Path(__file__).parent.parent.parent / "system_prompts" / "monthlytrafficprompt.md",  # 3 levels up (fallback)
+        Path("/app") / "system_prompts" / "monthlytrafficprompt.md",  # Docker absolute path
+    ]
+    
+    prompt_path = None
+    for path in possible_paths:
+        if path.exists():
+            prompt_path = path
+            break
+    
+    if not prompt_path:
+        logger.error("Failed to find monthlytrafficprompt.md. Tried paths: %s", possible_paths)
+        return None
+    
+    logger.debug("Loading monthly traffic prompt from: %s", prompt_path)
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            system_prompt = f.read()
+    except Exception as e:
+        logger.error("Failed to load monthlytrafficprompt.md from %s: %s", prompt_path, e)
+        return None
+    
+    # Build user message with inputs
+    user_parts = [f"domain: {domain}"]
+    if opr_rank is not None:
+        user_parts.append(f"opr_rank: {opr_rank}")
+    if country:
+        user_parts.append(f"country: {country}")
+    if vertical:
+        user_parts.append(f"vertical: {vertical}")
+    if known_monthly_uniques is not None:
+        user_parts.append(f"known_monthly_uniques: {known_monthly_uniques}")
+    if timeframe:
+        user_parts.append(f"timeframe: {timeframe}")
+    
+    user_message = "\n".join(user_parts)
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://shift6.local/",
+        "X-Title": "Shift6 Monthly Traffic Estimator",
+    }
+    
+    payload = {
+        "model": OPENROUTER_MODEL_ID,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "stream": False,
+    }
+    
+    logger.info("Calling OpenRouter for monthly traffic estimation: domain=%s opr_rank=%s", domain, opr_rank)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60)) as client:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+            logger.info("OpenRouter monthly traffic response: status_code=%s", resp.status_code)
+            if resp.status_code == 200:
+                j = resp.json()
+                msg = (j.get("choices") or [{}])[0].get("message") or {}
+                content = msg.get("content") or (j.get("choices") or [{}])[0].get("text")
+                if content:
+                    # Try to parse JSON from the response
+                    try:
+                        # The LLM should return JSON, but it might be wrapped in markdown code blocks
+                        content_clean = content.strip()
+                        if content_clean.startswith("```"):
+                            # Extract JSON from code block
+                            lines = content_clean.split("\n")
+                            json_lines = []
+                            in_json = False
+                            for line in lines:
+                                if line.strip().startswith("```json") or line.strip().startswith("```"):
+                                    in_json = True
+                                    continue
+                                if line.strip() == "```":
+                                    break
+                                if in_json:
+                                    json_lines.append(line)
+                            content_clean = "\n".join(json_lines)
+                        result = json.loads(content_clean)
+                        logger.info("Monthly traffic estimation successful for domain=%s", domain)
+                        return result
+                    except json.JSONDecodeError as e:
+                        logger.error("Failed to parse JSON from OpenRouter response: %s content_preview=%s", e, content[:200])
+                        return None
+            else:
+                logger.error("OpenRouter monthly traffic request failed: status_code=%s response=%s", resp.status_code, resp.text[:500])
+                return None
+    except Exception as e:
+        logger.exception("OpenRouter monthly traffic exception for domain=%s: %s", domain, e)
+        return None
 
 
 async def fetch_or_scrape(url: str) -> tuple[str | None, str | None, str | None, str]:
