@@ -179,7 +179,7 @@ async def run_for_quote(db: Session, q: Quote) -> bool:
     found = False
 
     for query in queries:
-        results = await exa_search(query, num_results=5)
+        results = await exa_search(query, num_results=10)
         for cand in results:
             hit = await _evaluate_candidate(db, q, cand, quote_vec)
             if hit:

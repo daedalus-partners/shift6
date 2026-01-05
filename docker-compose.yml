@@ -29,7 +29,9 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     environment:

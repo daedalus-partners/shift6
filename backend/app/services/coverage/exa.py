@@ -8,7 +8,7 @@ import httpx
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 
 
-async def exa_search(query: str, num_results: int = 5) -> List[Dict[str, Any]]:
+async def exa_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
     """
     Search using Exa AI API and return results with text content.
     """

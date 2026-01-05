@@ -194,11 +194,18 @@ async def lookup_da_muv(domain: str) -> tuple[str | None, str | None]:
     if not da:
         da = await lookup_da_via_exa(clean_domain)
     
-    # MUV via Exa search for SimilarWeb data
-    muv = await estimate_monthly_traffic_via_llm(clean_domain, da)
+    # MUV via LLM estimation
+    muv_result = await estimate_monthly_traffic_via_llm(clean_domain, da)
+    
+    # Safely extract MUV from nested response
+    muv = None
+    if muv_result and isinstance(muv_result, dict):
+        estimate = muv_result.get("estimate")
+        if estimate and isinstance(estimate, dict):
+            muv = estimate.get("base")
     
     logger.info("lookup_da_muv result for domain=%s: da=%s muv=%s", clean_domain, da, muv)
-    return da, muv.get("estimate").get("base")
+    return da, muv
 
 
 async def estimate_monthly_traffic_via_llm(
@@ -281,9 +288,10 @@ async def estimate_monthly_traffic_via_llm(
         "model": OPENROUTER_MODEL_ID,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
+            {"role": "user", "content": user_message + "\n\nIMPORTANT: Respond ONLY with valid JSON. No explanations, no tool calls, no markdown code blocks - just the raw JSON object."},
         ],
         "stream": False,
+        "response_format": {"type": "json_object"},
     }
     
     logger.info("Calling OpenRouter for monthly traffic estimation: domain=%s opr_rank=%s", domain, opr_rank)
