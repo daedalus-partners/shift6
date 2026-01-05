@@ -306,6 +306,101 @@ Planner: Document drafted.
 Executor: Dev profile compose created; backend/health OK at http://localhost:8000/health; frontend container running.
 DB: Alembic set up; `vector` extension migration applied; initial schema migration applied; tables present in Postgres.
 
+---
+
+## Server Deployment Plan: shift6.dwings.app
+
+**Date**: 2025-12-18
+**Target**: Ubuntu home server with Cloudflare Tunnel + Caddy
+
+### Deployment Decision: Docker Compose (Recommended)
+
+**Why Docker over native systemd:**
+- Your app has 3 tightly coupled services (backend, frontend, postgres with pgvector)
+- pgvector is a special Postgres extension - easier via Docker image than native install
+- Alembic migrations run automatically via docker-entrypoint.sh
+- Single `docker compose up -d` to start everything
+- Portable - same setup works anywhere
+- Easier to update (git pull + docker compose up --build)
+
+### Architecture on Server
+
+```
+Internet → Cloudflare DNS (shift6.dwings.app)
+        → Cloudflare Tunnel (cloudflared)
+        → Caddy (:8083 reverse proxy to :3000)
+        → Docker Compose
+            ├── frontend (:3000 - Vite dev or nginx prod)
+            ├── backend (:8000)
+            └── postgres (internal, no port exposed)
+```
+
+### Port Allocation (based on existing services)
+- 8080: sunmap (taken)
+- 8081: youup (taken)  
+- 8082: weather (taken)
+- **8083**: shift6 (NEW - Caddy entry point)
+- **3000**: shift6 frontend (Docker internal, mapped to host)
+- **8000**: shift6 backend (Docker internal, mapped to host)
+
+### High-Level Task Breakdown
+
+#### Task 1: Prepare the server directory
+- SSH into server
+- Create `/var/www/shift6` directory
+- Clone the repo from GitHub
+
+#### Task 2: Configure environment
+- Create `.env` file with production values
+- Set `CORS_ALLOW_ORIGINS=https://shift6.dwings.app`
+- Set `VITE_API_URL=https://shift6.dwings.app/api`
+
+#### Task 3: Update docker-compose for production
+- Build frontend as static files (not dev server)
+- Use nginx or Caddy inside container to serve frontend
+- Backend accessible at `/api` path
+
+#### Task 4: Update Caddy config on server
+- Add reverse proxy rules for shift6
+- Route `/api/*` to backend :8000
+- Route `/` to frontend :3000
+
+#### Task 5: Update Cloudflare Tunnel config
+- Add `shift6.dwings.app` → `http://localhost:8083` ingress rule
+- Restart cloudflared
+
+#### Task 6: Add DNS record in Cloudflare
+- CNAME: `shift6` → `<tunnel-id>.cfargotunnel.com`
+- Proxy: ON
+
+#### Task 7: Set up GitHub webhook for auto-deploy
+- Create deploy.sh script
+- Configure webhook to trigger on push
+
+#### Task 8: Test end-to-end
+- Verify https://shift6.dwings.app loads
+- Test API endpoints
+- Verify database persistence
+
+### Files to Create/Modify
+
+1. **docker-compose.prod.yml** (new) - production-specific overrides
+2. **frontend/Dockerfile** - add nginx stage for production
+3. **deploy.sh** - auto-deploy script for webhook
+4. **Server configs** (via SSH):
+   - `/etc/caddy/Caddyfile`
+   - `/etc/cloudflared/config.yml`
+
+### Project Status Board - Deployment
+- [ ] Task 1: Create server directory and clone repo
+- [ ] Task 2: Configure production .env
+- [ ] Task 3: Update docker-compose for production  
+- [ ] Task 4: Update Caddy config
+- [ ] Task 5: Update Cloudflare Tunnel config
+- [ ] Task 6: Add DNS record
+- [ ] Task 7: Set up auto-deploy webhook
+- [ ] Task 8: End-to-end testing
+
 ### Executor’s Feedback or Assistance Requests
 - If a document type frequently fails parsing, note the sample and consider adding `unstructured` for that format only.
 - If retrieval quality is poor, increase chunk overlap, tune chunk size, and test a larger embedding model.

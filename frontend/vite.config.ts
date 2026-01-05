@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    allowedHosts: ['shift6.ddls.app', 'shift6.ddls.dev'],
+    allowedHosts: ['shift6.ddls.app', 'shift6.ddls.dev', 'shift6.dwings.app'],
     proxy: {
       '/health': { target: 'http://backend:8000', changeOrigin: true },
       '/clients': { target: 'http://backend:8000', changeOrigin: true },

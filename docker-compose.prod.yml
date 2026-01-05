@@ -1,0 +1,24 @@
+# Production docker-compose override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    restart: unless-stopped
+    # Don't expose postgres port externally in production
+    ports: []
+
+  backend:
+    restart: unless-stopped
+    # Only expose on localhost, not to the world (Caddy will proxy)
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    environment:
+      - NODE_ENV=production
