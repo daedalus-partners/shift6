@@ -33,8 +33,8 @@ export const EmailApp: React.FC = () => {
         body: JSON.stringify({ client_name: clientName.trim(), article_url: articleUrl.trim() })
       })
       let j: any = null
-      try { j = await res.json() } catch {
-        const txt = await res.text()
+      const txt = await res.text()
+      try { j = JSON.parse(txt) } catch {
         throw new Error(txt?.slice(0, 200) || 'Non-JSON error')
       }
       if (!res.ok) throw new Error(j?.detail || 'Failed to summarize')
