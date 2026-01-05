@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import logging
 
 from .api.v1.router import router as api_v1_router
 from .api.v1.email.router import router as email_router
@@ -8,9 +9,24 @@ from .api.v1.coverage.router import router as coverage_router
 from .api.v1.settings.router import router as settings_router
 from .routers_retrieval import router as retrieval_router
 
-app = FastAPI(title="Shift6 Client Quote Generator API")
-
+# Configure logging
+# Default to DEBUG for dev (AUTH_MODE=none), INFO for prod
 auth_mode = os.getenv("AUTH_MODE", "none")
+log_level_env = os.getenv("LOG_LEVEL", "").upper()
+if log_level_env:
+    log_level = getattr(logging, log_level_env, logging.INFO)
+elif auth_mode == "none":
+    log_level = logging.DEBUG
+else:
+    log_level = logging.INFO
+
+logging.basicConfig(
+    level=log_level,
+    format="%(levelname)-8s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+app = FastAPI(title="Shift6 Client Quote Generator API")
 allowed_origins_env = os.getenv(
     "CORS_ALLOW_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1",
