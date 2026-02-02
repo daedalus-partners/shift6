@@ -16,23 +16,45 @@ root.render(
             { to: '/email', label: 'Email Generator' },
             { to: '/coverage', label: 'Coverage Tracker' },
             { to: '/quotes', label: 'Quote Generator' },
+            { to: 'https://shift6-buildout.onrender.com/', label: 'Task Manager', external: true },
           ].map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              style={({ isActive }) => ({
-                color: '#000',
-                textDecoration: 'none',
-                padding: '6px 4px',
-                borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
-                cursor: 'pointer',
-                fontWeight: 'bold',
-              })}
-              onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
-              onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
-            >
-              {item.label}
-            </NavLink>
+            'external' in item && item.external ? (
+              <a
+                key={item.to}
+                href={item.to}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: '#000',
+                  textDecoration: 'none',
+                  padding: '6px 4px',
+                  borderBottom: '2px solid transparent',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                }}
+                onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
+                onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
+              >
+                {item.label} ↗
+              </a>
+            ) : (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                style={({ isActive }) => ({
+                  color: '#000',
+                  textDecoration: 'none',
+                  padding: '6px 4px',
+                  borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                })}
+                onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
+                onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
+              >
+                {item.label}
+              </NavLink>
+            )
           ))}
           <div style={{ marginLeft: 'auto' }}>
             <NavLink
