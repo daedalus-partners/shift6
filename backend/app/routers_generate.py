@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import StreamingResponse
@@ -13,6 +14,23 @@ from .prompt_builder import build_prompt
 from .models import Chat, ChatMessage
 
 router = APIRouter(prefix="/generate", tags=["generate"])
+
+
+def _sanitize_quote(text: str) -> str:
+    """Clean up LLM output: replace em/en dashes, fix spacing issues."""
+    # Replace em dashes (—) and en dashes (–) with regular hyphens
+    text = text.replace("—", "-").replace("–", "-")
+    # Fix missing spaces after periods, commas, colons (but not in numbers like 3.14)
+    text = re.sub(r'([a-zA-Z])\.([A-Z])', r'\1. \2', text)
+    text = re.sub(r'([a-zA-Z]),([a-zA-Z])', r'\1, \2', text)
+    text = re.sub(r'([a-zA-Z]):([a-zA-Z])', r'\1: \2', text)
+    # Fix words that got concatenated (lowercase followed by lowercase with no space)
+    # This catches patterns like "financialinfrastructure" -> won't fix, too risky
+    # But we can fix newlines that became concatenated
+    text = re.sub(r'(\w)\n(\w)', r'\1 \2', text)
+    # Normalize multiple spaces to single space
+    text = re.sub(r' +', ' ', text)
+    return text.strip()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "anthropic/claude-3.7-sonnet")
@@ -125,6 +143,8 @@ async def generate(client_id: int, q: str, include_web: bool = False, request: R
     content = await nonstream_openrouter(messages)
     if not content:
         raise HTTPException(status_code=502, detail="OpenRouter completion failed; see server logs for details")
+    # Sanitize the content (fix em dashes, spacing issues)
+    content = _sanitize_quote(content)
     # persist chat
     chat = Chat(client_id=client_id, title=None)
     db.add(chat)
@@ -147,4 +167,6 @@ async def generate_full(client_id: int, q: str, include_web: bool = False, reque
     content = await nonstream_openrouter(messages)
     if not content:
         raise HTTPException(status_code=502, detail="OpenRouter completion failed; see server logs for details")
+    # Sanitize the content (fix em dashes, spacing issues)
+    content = _sanitize_quote(content)
     return {"content": content}
