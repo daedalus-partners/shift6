@@ -21,6 +21,20 @@ GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "openai/gpt-4o-mini")
 
+# #region agent log
+DEBUG_LOG_PATH = "/app/debug.log"
+import json as _json
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
+    try:
+        with open(DEBUG_LOG_PATH, "a") as f:
+            f.write(_json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data, "timestamp": datetime.now().isoformat()}) + "\n")
+    except: pass
+# #endregion
+
+# #region agent log
+_debug_log("A,B,E", "router.py:init", "Environment variables at module load", {"GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:50] if GOOGLE_SCRIPT_URL else "NOT_SET", "OPENROUTER_MODEL_ID": OPENROUTER_MODEL_ID, "OPENROUTER_API_KEY_SET": bool(OPENROUTER_API_KEY)})
+# #endregion
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -59,6 +73,9 @@ class ParsedTask(BaseModel):
 
 async def parse_message_with_llm(message: str) -> dict:
     """Parse a message into tasks using OpenRouter LLM."""
+    # #region agent log
+    _debug_log("A", "parse_message_with_llm:entry", "Starting LLM parse", {"message_len": len(message), "model": OPENROUTER_MODEL_ID, "api_key_set": bool(OPENROUTER_API_KEY)})
+    # #endregion
     if not OPENROUTER_API_KEY:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured")
 
@@ -114,6 +131,9 @@ Return format:
             },
         )
 
+        # #region agent log
+        _debug_log("A", "parse_message_with_llm:response", "OpenRouter response received", {"status_code": response.status_code, "response_text_preview": response.text[:500] if response.text else "empty"})
+        # #endregion
         if response.status_code != 200:
             logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
             raise HTTPException(status_code=500, detail="LLM API request failed")
@@ -163,16 +183,25 @@ Return format:
 
 async def add_tasks_to_sheet(tasks: List[dict]) -> dict:
     """Add tasks to Google Sheets via Apps Script webhook."""
+    # #region agent log
+    _debug_log("B,C,D", "add_tasks_to_sheet:entry", "Starting add_tasks", {"task_count": len(tasks), "GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:80] if GOOGLE_SCRIPT_URL else "NOT_SET"})
+    # #endregion
     if not GOOGLE_SCRIPT_URL:
+        # #region agent log
+        _debug_log("B", "add_tasks_to_sheet:no_url", "GOOGLE_SCRIPT_URL not configured", {})
+        # #endregion
         raise HTTPException(status_code=500, detail="GOOGLE_SCRIPT_URL not configured")
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         response = await client.post(
             GOOGLE_SCRIPT_URL,
             headers={"Content-Type": "application/json"},
             json={"action": "add_tasks", "tasks": tasks},
         )
 
+        # #region agent log
+        _debug_log("C,D", "add_tasks_to_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
+        # #endregion
         if response.status_code != 200:
             logger.error(f"Google Script error: {response.status_code} - {response.text}")
             raise HTTPException(status_code=500, detail="Failed to add tasks to sheet")
@@ -186,31 +215,49 @@ async def add_tasks_to_sheet(tasks: List[dict]) -> dict:
 
 async def get_tasks_from_sheet(status_filter: Optional[str] = None) -> List[dict]:
     """Get tasks from Google Sheets via Apps Script webhook."""
+    # #region agent log
+    _debug_log("B,C,D,E", "get_tasks_from_sheet:entry", "Starting get_tasks", {"GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:80] if GOOGLE_SCRIPT_URL else "NOT_SET", "status_filter": status_filter})
+    # #endregion
     if not GOOGLE_SCRIPT_URL:
+        # #region agent log
+        _debug_log("B,E", "get_tasks_from_sheet:no_url", "GOOGLE_SCRIPT_URL not configured", {})
+        # #endregion
         logger.warning("GOOGLE_SCRIPT_URL not configured, returning empty task list")
         return []
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             payload = {"action": "get_tasks"}
             if status_filter:
                 payload["status"] = status_filter
 
+            # #region agent log
+            _debug_log("C,D", "get_tasks_from_sheet:request", "Sending request to Google Script", {"url": GOOGLE_SCRIPT_URL, "payload": payload})
+            # #endregion
             response = await client.post(
                 GOOGLE_SCRIPT_URL,
                 headers={"Content-Type": "application/json"},
                 json=payload,
             )
 
+            # #region agent log
+            _debug_log("C,D", "get_tasks_from_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
+            # #endregion
             if response.status_code != 200:
                 logger.error(f"Google Script error: {response.status_code} - {response.text}")
                 return []  # Return empty list instead of failing
 
             data = response.json()
+            # #region agent log
+            _debug_log("C", "get_tasks_from_sheet:parsed", "Parsed response", {"status": data.get("status"), "task_count": len(data.get("tasks", [])) if data.get("tasks") else 0, "error": data.get("error")})
+            # #endregion
             if data.get("status") != "success":
                 logger.error(f"Google Script returned error: {data.get('error', 'Unknown')}")
                 return []
     except Exception as e:
+        # #region agent log
+        _debug_log("C,D", "get_tasks_from_sheet:exception", "Exception occurred", {"error": str(e), "error_type": type(e).__name__})
+        # #endregion
         logger.error(f"Failed to fetch tasks from sheet: {e}")
         return []
 
