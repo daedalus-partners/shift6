@@ -103,6 +103,7 @@ Return format:
             },
             json={
                 "model": OPENROUTER_MODEL_ID,
+                "max_tokens": 1000,  # Limit tokens to avoid credit issues
                 "messages": [
                     {
                         "role": "system",
@@ -186,28 +187,34 @@ async def add_tasks_to_sheet(tasks: List[dict]) -> dict:
 async def get_tasks_from_sheet(status_filter: Optional[str] = None) -> List[dict]:
     """Get tasks from Google Sheets via Apps Script webhook."""
     if not GOOGLE_SCRIPT_URL:
-        raise HTTPException(status_code=500, detail="GOOGLE_SCRIPT_URL not configured")
+        logger.warning("GOOGLE_SCRIPT_URL not configured, returning empty task list")
+        return []
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        payload = {"action": "get_tasks"}
-        if status_filter:
-            payload["status"] = status_filter
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {"action": "get_tasks"}
+            if status_filter:
+                payload["status"] = status_filter
 
-        response = await client.post(
-            GOOGLE_SCRIPT_URL,
-            headers={"Content-Type": "application/json"},
-            json=payload,
-        )
+            response = await client.post(
+                GOOGLE_SCRIPT_URL,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+            )
 
-        if response.status_code != 200:
-            logger.error(f"Google Script error: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail="Failed to get tasks from sheet")
+            if response.status_code != 200:
+                logger.error(f"Google Script error: {response.status_code} - {response.text}")
+                return []  # Return empty list instead of failing
 
-        data = response.json()
-        if data.get("status") != "success":
-            raise HTTPException(status_code=500, detail=data.get("error", "Unknown error"))
+            data = response.json()
+            if data.get("status") != "success":
+                logger.error(f"Google Script returned error: {data.get('error', 'Unknown')}")
+                return []
+    except Exception as e:
+        logger.error(f"Failed to fetch tasks from sheet: {e}")
+        return []
 
-        return data.get("tasks", [])
+    return data.get("tasks", [])
 
 
 @router.post("/chat", response_model=ChatResponse)
