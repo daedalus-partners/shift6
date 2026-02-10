@@ -5,6 +5,7 @@ import { EmailApp } from './ui/email/EmailApp'
 import { CoverageApp } from './ui/coverage/CoverageApp'
 import { QuotesApp } from './ui/quotes/QuotesApp'
 import { SettingsApp } from './ui/settings/SettingsApp'
+import { TaskManagerApp } from './ui/tasks/TaskManagerApp'
 
 const root = createRoot(document.getElementById('root')!)
 root.render(
@@ -16,45 +17,24 @@ root.render(
             { to: '/email', label: 'Email Generator' },
             { to: '/coverage', label: 'Coverage Tracker' },
             { to: '/quotes', label: 'Quote Generator' },
-            { to: 'https://shift6-buildout.onrender.com/', label: 'Task Manager', external: true },
+            { to: '/tasks', label: 'Task Manager' },
           ].map((item) => (
-            'external' in item && item.external ? (
-              <a
-                key={item.to}
-                href={item.to}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  color: '#000',
-                  textDecoration: 'none',
-                  padding: '6px 4px',
-                  borderBottom: '2px solid transparent',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                }}
-                onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
-                onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
-              >
-                {item.label} ↗
-              </a>
-            ) : (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                style={({ isActive }) => ({
-                  color: '#000',
-                  textDecoration: 'none',
-                  padding: '6px 4px',
-                  borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
-                  cursor: 'pointer',
-                  fontWeight: 'bold',
-                })}
-                onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
-                onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
-              >
-                {item.label}
-              </NavLink>
-            )
+            <NavLink
+              key={item.to}
+              to={item.to}
+              style={({ isActive }) => ({
+                color: '#000',
+                textDecoration: 'none',
+                padding: '6px 4px',
+                borderBottom: isActive ? '2px solid #000' : '2px solid transparent',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+              })}
+              onMouseOver={(e) => ((e.currentTarget.style.textDecoration = 'underline'))}
+              onMouseOut={(e) => ((e.currentTarget.style.textDecoration = 'none'))}
+            >
+              {item.label}
+            </NavLink>
           ))}
           <div style={{ marginLeft: 'auto' }}>
             <NavLink
@@ -79,6 +59,7 @@ root.render(
           <Route path="/email" element={<EmailApp />} />
           <Route path="/coverage" element={<CoverageApp />} />
           <Route path="/quotes" element={<QuotesApp />} />
+          <Route path="/tasks" element={<TaskManagerApp />} />
           <Route path="/settings" element={<SettingsApp />} />
         </Routes>
       </div>
