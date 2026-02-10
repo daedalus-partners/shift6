@@ -190,27 +190,37 @@ async def add_tasks_to_sheet(tasks: List[dict]) -> dict:
         # #region agent log
         _debug_log("B", "add_tasks_to_sheet:no_url", "GOOGLE_SCRIPT_URL not configured", {})
         # #endregion
-        raise HTTPException(status_code=500, detail="GOOGLE_SCRIPT_URL not configured")
+        return {"status": "error", "message": "GOOGLE_SCRIPT_URL not configured"}
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        response = await client.post(
-            GOOGLE_SCRIPT_URL,
-            headers={"Content-Type": "application/json"},
-            json={"action": "add_tasks", "tasks": tasks},
-        )
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.post(
+                GOOGLE_SCRIPT_URL,
+                headers={"Content-Type": "application/json"},
+                json={"action": "add_tasks", "tasks": tasks},
+            )
 
+            # #region agent log
+            _debug_log("C,D", "add_tasks_to_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
+            # #endregion
+            if response.status_code == 403:
+                logger.error(f"Google Script 403 Forbidden - check deployment permissions (must be 'Anyone')")
+                return {"status": "error", "message": "Google Sheet access denied. The Apps Script deployment needs 'Anyone' access."}
+            if response.status_code != 200:
+                logger.error(f"Google Script error: {response.status_code} - {response.text[:200]}")
+                return {"status": "error", "message": f"Google Sheet returned status {response.status_code}"}
+
+            data = response.json()
+            if data.get("status") != "success":
+                return {"status": "error", "message": data.get("error", "Unknown error from Google Sheet")}
+
+            return data
+    except Exception as e:
         # #region agent log
-        _debug_log("C,D", "add_tasks_to_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
+        _debug_log("C,D", "add_tasks_to_sheet:exception", "Exception in add_tasks", {"error": str(e), "error_type": type(e).__name__})
         # #endregion
-        if response.status_code != 200:
-            logger.error(f"Google Script error: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=500, detail="Failed to add tasks to sheet")
-
-        data = response.json()
-        if data.get("status") != "success":
-            raise HTTPException(status_code=500, detail=data.get("error", "Unknown error"))
-
-        return data
+        logger.error(f"Failed to add tasks to sheet: {e}")
+        return {"status": "error", "message": f"Could not reach Google Sheet: {e}"}
 
 
 async def get_tasks_from_sheet(status_filter: Optional[str] = None) -> List[dict]:
@@ -305,23 +315,29 @@ async def chat_add_task(request: ChatRequest):
             )
 
         # Add to sheet
-        await add_tasks_to_sheet(task_rows)
+        sheet_result = await add_tasks_to_sheet(task_rows)
+
+        if sheet_result.get("status") == "error":
+            error_msg = sheet_result.get("message", "Unknown error")
+            logger.error(f"Failed to add tasks to sheet: {error_msg}")
+            return ChatResponse(
+                success=False,
+                error=f"I parsed your task but couldn't save it to the spreadsheet: {error_msg}",
+            )
 
         # Generate response
         if len(tasks) == 1:
-            response_msg = f"✅ I've processed your task and added it to your productivity tracker. The task has been assigned to {', '.join(tasks[0]['people'])} for {tasks[0]['client']}."
+            response_msg = f"I've processed your task and added it to your productivity tracker. The task has been assigned to {', '.join(tasks[0]['people'])} for {tasks[0]['client']}."
         else:
-            response_msg = f"✅ I've processed your message and created {len(tasks)} tasks in your productivity tracker. Each task has been properly categorized and assigned. Check your spreadsheet for the complete breakdown."
+            response_msg = f"I've processed your message and created {len(tasks)} tasks in your productivity tracker. Each task has been properly categorized and assigned. Check your spreadsheet for the complete breakdown."
 
         return ChatResponse(success=True, response=response_msg)
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.exception(f"Error processing chat message: {e}")
         return ChatResponse(
             success=False,
-            error="Failed to process your message. Please try again.",
+            error=f"Failed to process your message: {str(e)}",
         )
 
 
