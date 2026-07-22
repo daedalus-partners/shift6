@@ -248,7 +248,9 @@ async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict
         "site_authority": authority_metric,
         "monthly_audience": {
             "label": "Monthly audience estimate",
-            "value": f"~{audience:,} monthly unique visitors",
+            # Keep the persisted display value within the legacy VARCHAR(32)
+            # column; the label and method carry the audience-unit context.
+            "value": f"~{audience:,}",
             "source": audience_source,
             "method": audience_method,
             "confidence": "low",

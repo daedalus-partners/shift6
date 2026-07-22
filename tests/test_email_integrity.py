@@ -257,7 +257,8 @@ async def test_moz_metrics_include_real_da_and_labeled_numeric_audience(monkeypa
         "estimated": False,
         "observed_at": metrics["site_authority"]["observed_at"],
     }
-    assert metrics["monthly_audience"]["value"] == "~3,000,000 monthly unique visitors"
+    assert metrics["monthly_audience"]["value"] == "~3,000,000"
+    assert len(metrics["monthly_audience"]["value"]) <= 32
     assert metrics["monthly_audience"]["estimated"] is True
     assert "not measured traffic" in metrics["monthly_audience"]["method"]
 
@@ -271,7 +272,7 @@ async def test_metrics_still_supply_a_numeric_audience_without_authority(monkeyp
     monkeypatch.setattr(email_metadata, "lookup_da_via_openpagerank", no_authority)
     metrics = await email_metadata.lookup_da_muv("publisher.example")
 
-    assert metrics["monthly_audience"]["value"] == "~100,000 monthly unique visitors"
+    assert metrics["monthly_audience"]["value"] == "~100,000"
     assert metrics["monthly_audience"]["source"] == "Internal best-effort fallback"
 
 
