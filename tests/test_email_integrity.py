@@ -205,6 +205,76 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
     assert '“We are ready to launch.”' in markdown
 
 
+@pytest.mark.asyncio
+async def test_moz_v2_lookup_uses_basic_token_without_exposing_it(monkeypatch):
+    request = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"results": [{"domain_authority": 76.0}]}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, headers, json):
+            request.update(url=url, headers=headers, json=json)
+            return FakeResponse()
+
+    monkeypatch.setenv("MOZ_API_TOKEN", "encoded-token")
+    monkeypatch.setattr(email_metadata.httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+
+    authority = await email_metadata.lookup_domain_authority_via_moz("businesstraveller.com")
+
+    assert authority == 76
+    assert request == {
+        "url": "https://lsapi.seomoz.com/v2/url_metrics",
+        "headers": {"Authorization": "Basic encoded-token", "Content-Type": "application/json"},
+        "json": {"targets": ["businesstraveller.com"]},
+    }
+
+
+@pytest.mark.asyncio
+async def test_moz_metrics_include_real_da_and_labeled_numeric_audience(monkeypatch):
+    async def fake_moz(_domain):
+        return 76
+
+    monkeypatch.setattr(email_metadata, "lookup_domain_authority_via_moz", fake_moz)
+    metrics = await email_metadata.lookup_da_muv("www.businesstraveller.com")
+
+    assert metrics["site_authority"] == {
+        "label": "Moz Domain Authority",
+        "value": "76/100",
+        "source": "Moz Link Explorer API v2",
+        "method": "URL Metrics domain_authority for the publication domain",
+        "confidence": "high",
+        "estimated": False,
+        "observed_at": metrics["site_authority"]["observed_at"],
+    }
+    assert metrics["monthly_audience"]["value"] == "~3,000,000 monthly unique visitors"
+    assert metrics["monthly_audience"]["estimated"] is True
+    assert "not measured traffic" in metrics["monthly_audience"]["method"]
+
+
+@pytest.mark.asyncio
+async def test_metrics_still_supply_a_numeric_audience_without_authority(monkeypatch):
+    async def no_authority(_domain):
+        return None
+
+    monkeypatch.setattr(email_metadata, "lookup_domain_authority_via_moz", no_authority)
+    monkeypatch.setattr(email_metadata, "lookup_da_via_openpagerank", no_authority)
+    metrics = await email_metadata.lookup_da_muv("publisher.example")
+
+    assert metrics["monthly_audience"]["value"] == "~100,000 monthly unique visitors"
+    assert metrics["monthly_audience"]["source"] == "Internal best-effort fallback"
+
+
 def test_renderer_rejects_analysis_with_unverified_links():
     with pytest.raises(SummaryGenerationError):
         render_verified_email(
@@ -294,7 +364,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
     async def fake_about(_domain):
         return "Publisher description"
 
-    async def fake_metrics(_domain):
+    async def fake_metrics(_domain, cached_metrics=None):
         return {
             "site_authority": {"value": "Unavailable"},
             "monthly_audience": {"value": "Unavailable"},
@@ -309,6 +379,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
     monkeypatch.setattr(email_router, "fetch_or_scrape", fake_fetch)
     monkeypatch.setattr(email_router, "try_fetch_about_description", fake_about)
     monkeypatch.setattr(email_router, "lookup_da_muv", fake_metrics)
+    monkeypatch.setattr(email_router, "_cached_publication_metrics", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(email_router, "summarize_to_markdown", fake_summary)
     monkeypatch.setattr(email_router, "embed_texts", lambda _texts: [np.zeros(768)])
 

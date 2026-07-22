@@ -17,7 +17,8 @@ Every generated email has a deterministic subject:
 - Client mentions use normalized boundaries. Quotes require client attribution; unrelated quoted text is not selected.
 - Remote publisher text is sent to the model as untrusted JSON evidence. The model supplies only three subjective analysis fields. Headline, URL, links, quote, metrics, and labels are rendered deterministically from verified data.
 - Provider/source failure returns an error. There is no successful-looking offline placeholder.
-- Open PageRank is labeled as a directional `Site authority estimate`, never Moz Domain Authority. Monthly audience remains `Unavailable` without a verified provider.
+- Moz v2 URL Metrics supplies the actual `Moz Domain Authority`; results are cached for 30 days per publication to conserve API rows. Open PageRank remains a clearly labeled directional fallback.
+- Monthly audience always contains a number. Until a measured traffic provider is configured, it is visibly labeled as a low-confidence best-effort estimate with the deterministic authority-based method and observation date shown in the email.
 - Article identity is unique per client and URL. History, search, and summary reads require the client name and summaries are ordered from the summary record.
 - Coverage search results are re-fetched before persistence. Exact quote and client-name boundaries are verified against the fetched body.
 - Coverage hits are committed before an atomic email-delivery claim. SMTP requires verified TLS, and only source-verified hits can be sent.
@@ -35,7 +36,7 @@ Every generated email has a deterministic subject:
 ## Deployment
 
 1. Copy `.env.example` to the server's protected `.env`. This installation currently uses public `AUTH_MODE=none`; configure Cloudflare Access or API-key authentication before storing sensitive client data.
-2. Configure `CORS_ALLOW_ORIGINS=https://shift6.dwings.app` and the provider/SMTP variables.
+2. Configure `CORS_ALLOW_ORIGINS=https://shift6.dwings.app`, either `MOZ_API_TOKEN` or the `MOZ_ACCESS_ID`/`MOZ_SECRET_KEY` pair, and the remaining provider/SMTP variables.
 3. Deploy backend and frontend together. The backend entrypoint runs the Alembic chain through `c3e5f7a9b1d2` before starting.
 4. Confirm `/health`, `/docs`, one known-good email fixture, one wrong-URL rejection, and one source-verified coverage hit.
 5. Monitor authentication failures, source-verification failures, provider errors, rate limits, and `email_delivery_status=failed`.

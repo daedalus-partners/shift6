@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import hashlib
+import base64
+import math
 import re
 import httpx
 from datetime import datetime, timezone
@@ -32,11 +34,63 @@ def clean_outlet_description(value: str) -> str:
         text += "."
     return text[:400]
 
-async def lookup_da_via_openpagerank(clean_domain: str) -> str | None:
+def _moz_authorization_header() -> str | None:
+    """Build the Moz v2 Basic authorization header without logging credentials."""
+    token = os.getenv("MOZ_API_TOKEN", "").strip()
+    if token:
+        return token if token.lower().startswith("basic ") else f"Basic {token}"
+
+    access_id = os.getenv("MOZ_ACCESS_ID", "").strip()
+    secret_key = os.getenv("MOZ_SECRET_KEY", "").strip()
+    if not access_id or not secret_key:
+        return None
+    encoded = base64.b64encode(f"{access_id}:{secret_key}".encode("utf-8")).decode("ascii")
+    return f"Basic {encoded}"
+
+
+async def lookup_domain_authority_via_moz(clean_domain: str) -> int | None:
+    """Return Moz's URL Metrics domain_authority score for a publication domain."""
+    authorization = _moz_authorization_header()
+    if not authorization:
+        logger.info("Moz API credentials are not configured; Moz Domain Authority unavailable")
+        return None
+
+    logger.info("Attempting Moz v2 URL Metrics lookup for domain=%s", clean_domain)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15)) as client:
+            response = await client.post(
+                "https://lsapi.seomoz.com/v2/url_metrics",
+                headers={"Authorization": authorization, "Content-Type": "application/json"},
+                json={"targets": [clean_domain]},
+            )
+        if response.status_code != 200:
+            logger.error("Moz v2 request failed: status_code=%s", response.status_code)
+            return None
+
+        results = response.json().get("results") or []
+        if not results:
+            logger.warning("Moz v2 returned no URL Metrics results for domain=%s", clean_domain)
+            return None
+        raw_value = results[0].get("domain_authority")
+        if raw_value is None:
+            logger.warning("Moz v2 result omitted domain_authority for domain=%s", clean_domain)
+            return None
+        value = int(round(float(raw_value)))
+        if not 0 <= value <= 100:
+            logger.warning("Moz v2 returned out-of-range domain_authority for domain=%s", clean_domain)
+            return None
+        logger.info("Moz Domain Authority found for domain=%s", clean_domain)
+        return value
+    except (httpx.HTTPError, TypeError, ValueError):
+        logger.exception("Moz v2 lookup failed for domain=%s", clean_domain)
+        return None
+
+
+async def lookup_da_via_openpagerank(clean_domain: str) -> int | None:
     """
     Look up a directional site-authority estimate via Open PageRank.
     """
-    da: str | None = None
+    da: int | None = None
     opr_api_key = os.getenv("OPENPAGERANK_API_KEY", "")
     if not opr_api_key:
         logger.info("OPENPAGERANK_API_KEY is not configured; authority estimate unavailable")
@@ -58,13 +112,12 @@ async def lookup_da_via_openpagerank(clean_domain: str) -> str | None:
                     # page_rank_decimal is 0-10, convert to 0-100 scale like DA
                     if pr.get("page_rank_decimal") is not None:
                         page_rank_decimal = pr["page_rank_decimal"]
-                        da = str(int(float(page_rank_decimal) * 10))
+                        da = int(float(page_rank_decimal) * 10)
                         logger.info("DA found via Open PageRank: page_rank_decimal=%s da=%s", page_rank_decimal, da)
                     elif pr.get("rank"):
                         # Use rank as fallback indicator
                         rank = pr["rank"]
-                        da = f"Rank: {rank}"
-                        logger.info("DA found via Open PageRank (rank fallback): rank=%s da=%s", rank, da)
+                        logger.info("Open PageRank returned rank without a comparable 0-100 score: rank=%s", rank)
                     else:
                         logger.warning("Open PageRank returned result but no page_rank_decimal or rank: %s", pr)
                 else:
@@ -74,6 +127,17 @@ async def lookup_da_via_openpagerank(clean_domain: str) -> str | None:
     except Exception as e:
         logger.exception("Open PageRank exception for domain=%s: %s", clean_domain, e)
     return da
+
+
+def estimate_monthly_audience(authority_score: int | None) -> int:
+    """Return a stable, low-precision audience estimate when measured traffic is unavailable."""
+    if authority_score is None:
+        return 100_000
+    raw_estimate = 10 ** (1.5 + (0.065 * authority_score))
+    if raw_estimate <= 0:
+        return 100_000
+    magnitude = 10 ** math.floor(math.log10(raw_estimate))
+    return max(1_000, int(round(raw_estimate / magnitude) * magnitude))
 
 
 async def try_fetch_about_description(domain: str) -> str | None:
@@ -118,30 +182,77 @@ async def try_fetch_about_description(domain: str) -> str | None:
     return None
 
 
-async def lookup_da_muv(domain: str) -> dict:
+async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict:
     """
     Return publication metrics with explicit provenance and confidence.
     """
     clean_domain = domain.lower().replace("www.", "")
     observed_at = datetime.now(timezone.utc).date().isoformat()
-    authority = await lookup_da_via_openpagerank(clean_domain)
-    metrics = {
-        "site_authority": {
+    cached_authority = (cached_metrics or {}).get("site_authority") or {}
+    if cached_authority.get("source") == "Moz Link Explorer API v2" and cached_authority.get("value"):
+        logger.info("Using cached Moz Domain Authority for domain=%s", clean_domain)
+        return cached_metrics or {}
+
+    moz_authority = await lookup_domain_authority_via_moz(clean_domain)
+    opr_authority = None if moz_authority is not None else await lookup_da_via_openpagerank(clean_domain)
+    authority = moz_authority if moz_authority is not None else opr_authority
+    audience = estimate_monthly_audience(authority)
+
+    if moz_authority is not None:
+        authority_metric = {
+            "label": "Moz Domain Authority",
+            "value": f"{moz_authority}/100",
+            "source": "Moz Link Explorer API v2",
+            "method": "URL Metrics domain_authority for the publication domain",
+            "confidence": "high",
+            "estimated": False,
+            "observed_at": observed_at,
+        }
+        audience_source = "Best-effort model using Moz Domain Authority"
+        audience_method = (
+            "Deterministic authority-to-audience curve (10^(1.5 + 0.065 × Moz DA)), "
+            "rounded to one significant figure; not measured traffic"
+        )
+    elif opr_authority is not None:
+        authority_metric = {
             "label": "Site authority estimate",
-            "value": f"{authority}/100" if authority and authority.isdigit() else "Unavailable",
-            "source": "Open PageRank" if authority else "No verified authority source",
-            "method": "page_rank_decimal × 10; directional estimate, not Moz Domain Authority" if authority else "Not estimated when the configured source is unavailable",
-            "confidence": "medium" if authority else "low",
+            "value": f"{opr_authority}/100",
+            "source": "Open PageRank",
+            "method": "page_rank_decimal × 10; directional estimate, not Moz Domain Authority",
+            "confidence": "medium",
             "estimated": True,
             "observed_at": observed_at,
-        },
+        }
+        audience_source = "Best-effort model using Open PageRank"
+        audience_method = (
+            "Deterministic authority-to-audience curve (10^(1.5 + 0.065 × authority score)), "
+            "rounded to one significant figure; not measured traffic"
+        )
+    else:
+        authority_metric = {
+            "label": "Site authority estimate",
+            "value": "Unavailable",
+            "source": "No configured authority source",
+            "method": "No authority score was returned",
+            "confidence": "low",
+            "estimated": True,
+            "observed_at": observed_at,
+        }
+        audience_source = "Internal best-effort fallback"
+        audience_method = (
+            "Conservative 100,000 midpoint used when no authority or measured traffic source is available; "
+            "not measured traffic"
+        )
+
+    metrics = {
+        "site_authority": authority_metric,
         "monthly_audience": {
             "label": "Monthly audience estimate",
-            "value": "Unavailable",
-            "source": "No verified traffic source",
-            "method": "Not estimated when visits or unique-visitor evidence cannot be verified",
+            "value": f"~{audience:,} monthly unique visitors",
+            "source": audience_source,
+            "method": audience_method,
             "confidence": "low",
-            "estimated": False,
+            "estimated": True,
             "observed_at": observed_at,
         },
     }

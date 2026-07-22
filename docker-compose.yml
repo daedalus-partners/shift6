@@ -28,6 +28,9 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL_ID=${OPENROUTER_MODEL_ID}
       - EXA_API_KEY=${EXA_API_KEY}
+      - MOZ_API_TOKEN=${MOZ_API_TOKEN}
+      - MOZ_ACCESS_ID=${MOZ_ACCESS_ID}
+      - MOZ_SECRET_KEY=${MOZ_SECRET_KEY}
       - OPENPAGERANK_API_KEY=${OPENPAGERANK_API_KEY}
       - EXA_API_URL=${EXA_API_URL:-https://api.exa.ai/search}
       - EMBEDDING_MODEL_ID=${EMBEDDING_MODEL_ID:-sentence-transformers/all-mpnet-base-v2}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
@@ -42,6 +42,31 @@ def _source_timestamp(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _cached_publication_metrics(db: Session, domain: str, max_age_days: int = 30) -> dict | None:
+    """Reuse recent Moz metrics so repeated coverage does not consume another API row."""
+    rows = (
+        db.query(ArticleSummary)
+        .join(Article, Article.id == ArticleSummary.article_id)
+        .filter(Article.domain == domain)
+        .order_by(desc(ArticleSummary.created_at), desc(ArticleSummary.id))
+        .limit(20)
+        .all()
+    )
+    oldest_allowed = date.today() - timedelta(days=max_age_days)
+    for summary in rows:
+        metrics = summary.metrics if isinstance(summary.metrics, dict) else {}
+        authority = metrics.get("site_authority") if isinstance(metrics, dict) else None
+        if not isinstance(authority, dict) or authority.get("source") != "Moz Link Explorer API v2":
+            continue
+        try:
+            observed_at = date.fromisoformat(str(authority.get("observed_at")))
+        except ValueError:
+            continue
+        if observed_at >= oldest_allowed:
+            return metrics
+    return None
+
+
 @router.post("/summarize")
 async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
     client_name = input.client_name.strip()
@@ -49,8 +74,10 @@ async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
     try:
         document = await fetch_or_scrape(requested_url)
         if document.domain:
+            cached_metrics = _cached_publication_metrics(db, document.domain)
             outlet_desc, metrics = await asyncio.gather(
-                try_fetch_about_description(document.domain), lookup_da_muv(document.domain)
+                try_fetch_about_description(document.domain),
+                lookup_da_muv(document.domain, cached_metrics=cached_metrics),
             )
         else:
             outlet_desc, metrics = None, {}
