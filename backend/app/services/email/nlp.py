@@ -3,6 +3,39 @@ from __future__ import annotations
 import re
 from typing import List
 import difflib
+from urllib.parse import urlsplit
+
+
+BOILERPLATE_MARKERS = (
+    "read more",
+    "view all",
+    "latest features",
+    "sign up",
+    "skip to content",
+    "privacy policy",
+    "cookie policy",
+)
+GENERIC_CLIENT_TOKENS = {
+    "airline",
+    "airlines",
+    "company",
+    "corp",
+    "corporation",
+    "group",
+    "inc",
+    "limited",
+    "llc",
+    "ltd",
+    "technology",
+    "technologies",
+}
+SOCIAL_SHARE_PATH_MARKERS = (
+    "/share",
+    "/sharer",
+    "/sharing/",
+    "/submit",
+    "/intent/",
+)
 
 
 def client_name_pattern(client_name: str) -> re.Pattern[str] | None:
@@ -53,9 +86,21 @@ def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], 
     if pattern is None:
         return mentions, links
     if pattern.search(body):
-        # Collect up to 3 snippets around mentions
+        candidates: list[tuple[int, int, str]] = []
         for m in pattern.finditer(body):
             snippet = _mention_snippet(body, m.start(), m.end())
+            lower = snippet.lower()
+            marker_penalty = sum(250 for marker in BOILERPLATE_MARKERS if marker in lower)
+            prose_bonus = 100 if 60 <= len(snippet) <= 600 else 0
+            punctuation_bonus = 20 if re.search(r"[.!?]", snippet) else 0
+            score = prose_bonus + punctuation_bonus + min(len(snippet), 400) // 10 - marker_penalty
+            candidates.append((score, m.start(), snippet))
+        seen: set[str] = set()
+        for _score, _position, snippet in sorted(candidates, key=lambda item: (-item[0], item[1])):
+            normalized = snippet.casefold()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
             mentions.append(snippet)
             if len(mentions) >= 3:
                 break
@@ -186,22 +231,37 @@ def classify_sentiment(text: str) -> str:
     return "Neutral"
 
 
-def extract_client_links(links: list[str] | list[dict[str, str]], client_name: str) -> List[str]:
+def extract_client_links(
+    links: list[str] | list[dict[str, str]],
+    client_name: str,
+    article_url: str | None = None,
+) -> List[str]:
     out: List[str] = []
-    name_tokens = [t for t in re.split(r"\s+", client_name.strip().lower()) if t and len(t) > 2]
+    all_name_tokens = [t for t in re.findall(r"\w+", client_name.lower()) if len(t) > 2]
+    name_tokens = [token for token in all_name_tokens if token not in GENERIC_CLIENT_TOKENS]
+    name_tokens = name_tokens or all_name_tokens
     exact_name = client_name_pattern(client_name)
+    publisher_host = (urlsplit(article_url).hostname or "").lower().removeprefix("www.") if article_url else ""
     for link in links:
         if isinstance(link, dict):
             u = str(link.get("url") or "")
-            anchor_text = str(link.get("text") or "").lower()
+            anchor_text = str(link.get("text") or "")
         else:
             u = str(link)
             anchor_text = ""
-        ul = u.lower()
-        if (
-            any(tok in ul or re.search(rf"(?<!\w){re.escape(tok)}(?!\w)", anchor_text) for tok in name_tokens)
-            or bool(exact_name and exact_name.search(anchor_text))
-        ):
+        parsed = urlsplit(u)
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        path = parsed.path.lower()
+        if parsed.scheme.lower() not in {"http", "https"} or not host:
+            continue
+        if publisher_host and host == publisher_host:
+            continue
+        if any(marker in path for marker in SOCIAL_SHARE_PATH_MARKERS):
+            continue
+        searchable_url = f"{host}{path}".lower()
+        url_matches = bool(name_tokens) and all(token in searchable_url for token in name_tokens)
+        anchor_matches = bool(exact_name and exact_name.search(anchor_text))
+        if url_matches or anchor_matches:
             out.append(u)
     # dedupe keep order
     seen = set()

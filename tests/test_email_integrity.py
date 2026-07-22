@@ -19,7 +19,7 @@ from app.services.email.http_safety import (
 from app.services.email.scraper import parse_article_html
 from app.services.email.scraper import ArticleDocument
 from app.services.email import metadata as email_metadata
-from app.services.email.nlp import extract_mentions_and_links
+from app.services.email.nlp import extract_client_links, extract_mentions_and_links
 from app.services.email.subject import coverage_subject, markdown_with_subject, markdown_without_subject
 from app.services.email.summarizer import (
     SummaryGenerationError,
@@ -77,6 +77,31 @@ def test_client_mention_preserves_decimal_funding_context():
     mentions, _ = extract_mentions_and_links("OXCCU", source)
     assert mentions == [source]
     assert "£20.75 million" in mentions[0]
+
+
+def test_client_mention_prefers_article_prose_over_navigation():
+    body = (
+        "News News View All Airlines Latest Features Read More Hawaiian Airlines fleet news Read More\n"
+        "Hawaiian Airlines plans to begin replacing its Boeing 717 fleet in 2028 with larger 737-800 aircraft."
+    )
+    mentions, _ = extract_mentions_and_links("Hawaiian Airlines", body)
+    assert mentions[0] == (
+        "Hawaiian Airlines plans to begin replacing its Boeing 717 fleet in 2028 with larger 737-800 aircraft."
+    )
+
+
+def test_client_links_exclude_publisher_navigation_and_share_links():
+    links = [
+        {"text": "Airlines", "url": "https://publisher.example/news/airlines/"},
+        {"text": "Hawaiian Airlines story", "url": "https://publisher.example/news/hawaiian-airlines-story/"},
+        {"text": "Share", "url": "https://facebook.com/sharer/sharer.php?u=hawaiian-airlines"},
+        {"text": "Official site", "url": "https://www.hawaiianairlines.com/about-us"},
+    ]
+    assert extract_client_links(
+        links,
+        "Hawaiian Airlines",
+        "https://publisher.example/news/hawaiian-airlines-story/",
+    ) == ["https://www.hawaiianairlines.com/about-us"]
 
 
 def test_subject_normalizes_domain_style_publication_metadata():
@@ -234,7 +259,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
         title="Acme launches | Publisher",
         description="A publication.",
         body='Acme said, “We are ready to launch.”',
-        links=[{"text": "Acme", "url": "https://publisher.example/acme"}],
+        links=[{"text": "Acme", "url": "https://acme.example/about"}],
         fetched_at="2026-07-21T12:00:00+00:00",
         content_sha256="a" * 64,
         source_method="direct_http",
@@ -255,7 +280,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
     async def fake_summary(data):
         assert data["url"] == document.requested_url
         assert data["publication"] == "The Publisher"
-        assert data["client_links"] == ["https://publisher.example/acme"]
+        assert data["client_links"] == ["https://acme.example/about"]
         return "Verified markdown"
 
     monkeypatch.setattr(email_router, "fetch_or_scrape", fake_fetch)
