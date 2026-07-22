@@ -20,9 +20,9 @@ from fastapi.testclient import TestClient
 import sys
 sys.path.insert(0, "backend")
 
-from backend.app.main import app
-from backend.app.models import Base, Quote, Hit, HitRead
-from backend.app.db import get_db
+from app.main import app
+from app.models import Base, Quote, Hit, HitRead
+from app.db import get_db
 
 # Test database URL - uses the same DB as development for integration testing
 # In production you'd use a separate test DB
@@ -773,4 +773,3 @@ if __name__ == "__main__":
     print(FRONTEND_MANUAL_TESTS)
     print("\nRunning automated tests...")
     pytest.main([__file__, "-v", "-s"])
-

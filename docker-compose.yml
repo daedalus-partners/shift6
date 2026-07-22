@@ -15,15 +15,39 @@ services:
 
   backend:
     build: ./backend
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+    expose:
+      - "8000"
     environment:
+      - APP_ENV=${APP_ENV:-development}
       - AUTH_MODE=${AUTH_MODE}
+      - SHIFT6_API_KEY=${SHIFT6_API_KEY}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN}
+      - CF_ACCESS_AUDIENCE=${CF_ACCESS_AUDIENCE}
       - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS}
       - DATABASE_URL=${DATABASE_URL}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_MODEL_ID=${OPENROUTER_MODEL_ID}
       - EXA_API_KEY=${EXA_API_KEY}
+      - OPENPAGERANK_API_KEY=${OPENPAGERANK_API_KEY}
+      - EXA_API_URL=${EXA_API_URL:-https://api.exa.ai/search}
+      - EMBEDDING_MODEL_ID=${EMBEDDING_MODEL_ID:-sentence-transformers/all-mpnet-base-v2}
+      - SMTP_URL=${SMTP_URL}
+      - FROM_EMAIL=${FROM_EMAIL:-coverage@shift6.dwings.app}
+      - UI_BASE_URL=${UI_BASE_URL:-https://shift6.dwings.app}
+      - API_BASE_URL=${API_BASE_URL:-https://shift6.dwings.app}
+      - GOOGLE_SCRIPT_URL=${GOOGLE_SCRIPT_URL}
+      - GOOGLE_SCRIPT_ALLOWED_HOSTS=${GOOGLE_SCRIPT_ALLOWED_HOSTS:-script.google.com,script.googleusercontent.com}
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON}
+      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
+      - UPLOAD_DIR=/data/uploads
+      - MAX_REQUEST_BYTES=${MAX_REQUEST_BYTES:-10485760}
+      - MAX_UPLOAD_BYTES=${MAX_UPLOAD_BYTES:-10485760}
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-120}
+      - EXPENSIVE_RATE_LIMIT_PER_MINUTE=${EXPENSIVE_RATE_LIMIT_PER_MINUTE:-12}
+      - MAX_EXPENSIVE_CONCURRENCY=${MAX_EXPENSIVE_CONCURRENCY:-3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,12 +56,11 @@ services:
     build:
       context: ./frontend
       target: dev
-    ports:
-      - "${FRONTEND_PORT:-5173}:5173"
-    environment:
-      - VITE_API_URL=${VITE_API_URL}
+    expose:
+      - "5173"
     depends_on:
       - backend
 
 volumes:
   pgdata:
+  uploads:

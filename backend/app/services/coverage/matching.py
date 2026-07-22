@@ -4,6 +4,8 @@ from typing import Dict, List, Tuple, Optional
 import math
 import os
 import json
+import re
+import unicodedata
 
 import numpy as np
 from app import embedding as emb
@@ -11,6 +13,25 @@ import httpx
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "anthropic/claude-3.7-sonnet")
+
+
+def normalize_for_exact_match(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text or "")
+    normalized = normalized.translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "—": "-", "–": "-"}))
+    return re.sub(r"\s+", " ", normalized).strip().casefold()
+
+
+def has_normalized_exact_quote(quote_text: str, article_text: str) -> bool:
+    quote = normalize_for_exact_match(quote_text).strip('"\' ')
+    article = normalize_for_exact_match(article_text)
+    if len(quote) < 12 or not article:
+        return False
+    return bool(re.search(rf"(?<!\w){re.escape(quote)}(?!\w)", article))
+
+
+def has_client_name(client_name: str, text: str) -> bool:
+    name = normalize_for_exact_match(client_name)
+    return bool(name and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", normalize_for_exact_match(text)))
 
 
 def tokenize_words(text: str) -> List[str]:
@@ -50,8 +71,8 @@ async def adjudicate_with_claude(client_name: str, quote_text: str, excerpt: str
     if not OPENROUTER_API_KEY:
         # Offline deterministic fallback: require both name and at least 50% Jaccard
         jac = jaccard_similarity(quote_text, excerpt)
-        mt = "exact" if quote_text in excerpt else ("paraphrase" if jac >= 0.6 else "no_match")
-        return jac >= 0.6 and (client_name.lower() in excerpt.lower()), mt, min(1.0, jac + 0.2), excerpt[:280]
+        mt = "exact" if has_normalized_exact_quote(quote_text, excerpt) else ("paraphrase" if jac >= 0.6 else "no_match")
+        return jac >= 0.6 and has_client_name(client_name, excerpt), mt, min(1.0, jac + 0.2), excerpt[:280]
 
     system = (
         "You are a precise media fact-checker. Return ONLY JSON with keys match, type, confidence, matched_text."
@@ -94,5 +115,5 @@ async def adjudicate_with_claude(client_name: str, quote_text: str, excerpt: str
         pass
     # fallback
     jac = jaccard_similarity(quote_text, excerpt)
-    mt = "exact" if quote_text in excerpt else ("paraphrase" if jac >= 0.6 else "no_match")
-    return jac >= 0.6 and (client_name.lower() in excerpt.lower()), mt, min(1.0, jac + 0.2), excerpt[:280]
+    mt = "exact" if has_normalized_exact_quote(quote_text, excerpt) else ("paraphrase" if jac >= 0.6 else "no_match")
+    return jac >= 0.6 and has_client_name(client_name, excerpt), mt, min(1.0, jac + 0.2), excerpt[:280]

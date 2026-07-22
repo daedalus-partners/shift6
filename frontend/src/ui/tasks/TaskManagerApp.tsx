@@ -69,7 +69,7 @@ export const TaskManagerApp: React.FC = () => {
     try {
       const response = await fetch(`${API_BASE}/tasks/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({
           message: messageContent,
           userId: 'web-user',

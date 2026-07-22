@@ -1,32 +1,38 @@
 from __future__ import annotations
 
-import os
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from .prompt_paths import prompt_path
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
 
-def _path(slug: str) -> str:
-    here = os.path.dirname(__file__)
-    p = os.path.abspath(os.path.join(here, "..", "system_prompts", f"{slug}.md"))
-    return p
+class PromptUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+def _path(slug: str):
+    try:
+        return prompt_path(slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{slug}")
 def get_prompt(slug: str):
     p = _path(slug)
-    if not os.path.exists(p):
+    if not p.exists():
         raise HTTPException(status_code=404, detail="not found")
-    with open(p, "r", encoding="utf-8") as f:
+    with p.open("r", encoding="utf-8") as f:
         return {"slug": slug, "content": f.read()}
 
 
 @router.put("/{slug}")
-def put_prompt(slug: str, content: str):
+def put_prompt(slug: str, payload: PromptUpdate):
     p = _path(slug)
-    os.makedirs(os.path.dirname(p), exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        f.write(content)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("w", encoding="utf-8") as f:
+        f.write(payload.content)
     return {"ok": True}
-
 

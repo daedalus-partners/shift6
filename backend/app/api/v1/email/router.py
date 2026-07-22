@@ -1,20 +1,35 @@
-import re
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
-from pydantic import BaseModel, HttpUrl
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, text as sql_text
-from ..deps import get_db_dep as get_db
-from ....models import Article, ArticleSummary, ArticleEmbedding
-from ....embedding import embed_texts
-from ....services.email.metadata import fetch_or_scrape, try_fetch_about_description, lookup_da_muv
-from ....services.email.nlp import extract_mentions_and_links, find_best_quote, classify_sentiment, extract_client_links, approximate_substring
-from ....services.email.summarizer import summarize_to_markdown
+from __future__ import annotations
 
+import logging
+import asyncio
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy import desc, text as sql_text
+from sqlalchemy.orm import Session
+
+from ..deps import get_db_dep as get_db
+from ....embedding import embed_texts
+from ....models import Article, ArticleEmbedding, ArticleSummary
+from ....services.email.http_safety import ResponseTooLargeError, UnsafeUrlError
+from ....services.email.metadata import fetch_or_scrape, lookup_da_muv, try_fetch_about_description
+from ....services.email.nlp import (
+    classify_sentiment,
+    extract_client_links,
+    extract_mentions_and_links,
+    find_best_quote,
+)
+from ....services.email.subject import coverage_subject
+from ....services.email.summarizer import SummaryGenerationError, summarize_to_markdown
+
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/email", tags=["Email"])
 
 
 class SummarizeIn(BaseModel):
-    client_name: str
+    client_name: str = Field(min_length=1, max_length=128)
     article_url: HttpUrl
 
 
@@ -23,157 +38,214 @@ def email_health():
     return {"status": "ok"}
 
 
+def _source_timestamp(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 @router.post("/summarize")
 async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
+    client_name = input.client_name.strip()
+    requested_url = str(input.article_url)
     try:
-        title, desc, body, domain = await fetch_or_scrape(str(input.article_url))
-        outlet_desc = await try_fetch_about_description(domain) if domain else None
-        da, muv = await lookup_da_muv(domain) if domain else (None, None)
-        mentions, links = extract_mentions_and_links(input.client_name, body or "")
-        client_links = extract_client_links(links, input.client_name)
-        best_quote = find_best_quote(body or "", input.client_name)
-        # If quote not found but the article contains attributed speech without quotes, attempt approximate match using LLM output
-        if not best_quote:
-            # Ask the LLM to propose a short candidate sentence, then align approximately to body
-            candidate_prompt = {
-                "client_name": input.client_name,
-                "body_excerpt": (body or "")[:1500],
-            }
-            # cheap heuristic: pick sentence with attribution verbs mentioning client tokens
-            best_quote = None
-            try:
-                # try to find a plausible sentence using regex heuristics
-                tokens = [t for t in (input.client_name or "").split() if len(t) > 2]
-                pattern = r"([^\.!?]{10,300}?(?:said|stated|told|according to|noted|explained)[^\.!?]{0,200})"
-                for m in re.finditer(pattern, body or "", flags=re.IGNORECASE):
-                    sent = m.group(1)
-                    if any(t.lower() in sent.lower() for t in tokens):
-                        best_quote = sent.strip()
-                        break
-            except Exception:
-                best_quote = None
+        document = await fetch_or_scrape(requested_url)
+        if document.domain:
+            outlet_desc, metrics = await asyncio.gather(
+                try_fetch_about_description(document.domain), lookup_da_muv(document.domain)
+            )
+        else:
+            outlet_desc, metrics = None, {}
+        mentions, _ = extract_mentions_and_links(client_name, document.body)
+        client_links = extract_client_links(document.links, client_name)
+        best_quote = find_best_quote(document.body, client_name)
 
         data = {
-            "client_name": input.client_name,
-            "url": str(input.article_url),
-            "domain": domain,
-            "title": title,
-            "outlet_description": outlet_desc or desc,
-            "da": da,
-            "muv": muv,
+            "client_name": client_name,
+            "url": requested_url,
+            "domain": document.domain,
+            "title": document.title,
+            # Article metadata describes this story, not necessarily the outlet.
+            # Keep the publication snapshot explicit when no verified About page exists.
+            "outlet_description": outlet_desc,
+            "metrics": metrics,
             "mentions": mentions,
-            "links": links,
             "client_links": client_links,
-            "body": body,
+            "body": document.body,
             "best_quote": best_quote,
         }
-        md = await summarize_to_markdown(data)
+        markdown = await summarize_to_markdown(data)
+        subject = coverage_subject(requested_url, document.domain, document.title, document.publication)
 
-        # persist (get-or-create by URL)
-        url_str = str(input.article_url)
-        article = db.query(Article).filter(Article.url == url_str).first()
+        article = (
+            db.query(Article)
+            .filter(Article.client_name == client_name, Article.url == requested_url)
+            .first()
+        )
         if article is None:
-            article = Article(
-                client_name=input.client_name,
-                url=url_str,
-                domain=domain,
-                title=title,
-                description=desc,
-                body=body,
-            )
+            article = Article(client_name=client_name, url=requested_url)
             db.add(article)
-            db.commit()
-            db.refresh(article)
-        else:
-            # update basic fields if newly available
-            if not article.title and title:
-                article.title = title
-            if not article.description and desc:
-                article.description = desc
-            if not article.body and body:
-                article.body = body
-            if not article.domain and domain:
-                article.domain = domain
-            db.add(article)
-            db.commit()
+        article.domain = document.domain
+        article.publication = document.publication
+        article.title = document.title
+        article.description = document.description
+        article.body = document.body
+        article.final_url = document.final_url
+        article.canonical_url = document.canonical_url
+        article.source_sha256 = document.content_sha256
+        article.source_fetched_at = _source_timestamp(document.fetched_at)
+        article.source_method = document.source_method
+        db.flush()
 
-        sentiment = classify_sentiment((body or "") + "\n" + (md or ""))
-        summary = ArticleSummary(article_id=article.id, markdown=md, sentiment=sentiment, da=da or None, muv=muv or None)
+        sentiment = classify_sentiment(document.body)
+        summary = ArticleSummary(
+            article_id=article.id,
+            markdown=markdown,
+            sentiment=sentiment,
+            da=(metrics.get("site_authority") or {}).get("value"),
+            muv=(metrics.get("monthly_audience") or {}).get("value"),
+            subject=subject,
+            metrics=metrics,
+            validation_status="source_verified",
+        )
         db.add(summary)
         db.commit()
+        db.refresh(article)
+        db.refresh(summary)
 
-        # embed body if available
-        if body:
+        if document.body:
             try:
-                vec = embed_texts([body])[0]
-                existing = db.query(ArticleEmbedding).filter(ArticleEmbedding.article_id == article.id).first()
+                vector = embed_texts([document.body])[0]
+                existing = (
+                    db.query(ArticleEmbedding)
+                    .filter(ArticleEmbedding.article_id == article.id)
+                    .first()
+                )
                 if existing is None:
-                    db.add(ArticleEmbedding(article_id=article.id, embedding=vec))
-                    db.commit()
+                    db.add(ArticleEmbedding(article_id=article.id, embedding=vector))
+                else:
+                    existing.embedding = vector
+                db.commit()
             except Exception:
-                pass
+                db.rollback()
+                logger.exception("Article embedding failed for article_id=%s", article.id)
 
-        return {"markdown": md, "article_id": article.id, "summary_id": summary.id}
-    except Exception as e:
-        # Always return JSON so the frontend can parse errors
-        raise HTTPException(status_code=502, detail=f"summarize_failed: {type(e).__name__}: {str(e)[:180]}")
+        return {
+            "subject": subject,
+            "markdown": markdown,
+            "article_id": article.id,
+            "summary_id": summary.id,
+            "validation_status": summary.validation_status,
+            "metrics": metrics,
+        }
+    except (UnsafeUrlError, ResponseTooLargeError, ValueError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SummaryGenerationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Email summary generation failed")
+        raise HTTPException(status_code=502, detail="Unable to generate a verified coverage email") from exc
 
 
 @router.get("/history")
-def history(limit: int = 5, offset: int = 0, db: Session = Depends(get_db)):
-    # Latest-first list of articles with optional attached summary id
-    # cap to last 5 items
-    limit = max(1, min(limit, 5))
-    q = (
-        db.query(Article, ArticleSummary.id.label("summary_id"))
-        .outerjoin(ArticleSummary, ArticleSummary.article_id == Article.id)
-        .order_by(desc(Article.created_at))
-        .offset(offset)
-        .limit(limit)
+def history(
+    limit: int = Query(5, ge=1, le=50),
+    offset: int = Query(0, ge=0, le=10_000),
+    client_name: str = Query(min_length=1, max_length=128),
+    db: Session = Depends(get_db),
+):
+    query = (
+        db.query(ArticleSummary, Article)
+        .join(Article, Article.id == ArticleSummary.article_id)
+        .order_by(desc(ArticleSummary.created_at), desc(ArticleSummary.id))
     )
+    query = query.filter(Article.client_name == client_name.strip())
     items = []
-    for a, sid in q.all():
-        items.append({
-            "id": a.id,
-            "url": a.url,
-            "title": a.title,
-            "domain": a.domain,
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-            "summary_id": sid,
-        })
+    for summary, article in query.offset(offset).limit(limit).all():
+        items.append(
+            {
+                "id": summary.id,
+                "article_id": article.id,
+                "url": article.url,
+                "title": article.title,
+                "domain": article.domain,
+                "client_name": article.client_name,
+                "created_at": summary.created_at.isoformat() if summary.created_at else None,
+                "summary_id": summary.id,
+                "subject": summary.subject,
+                "validation_status": summary.validation_status,
+            }
+        )
     return {"items": items, "limit": limit, "offset": offset}
 
 
 @router.get("/summary/{summary_id}")
-def get_summary(summary_id: int, db: Session = Depends(get_db)):
-    s = db.query(ArticleSummary).filter(ArticleSummary.id == summary_id).first()
-    if not s:
+def get_summary(
+    summary_id: int,
+    client_name: str = Query(min_length=1, max_length=128),
+    db: Session = Depends(get_db),
+):
+    row = (
+        db.query(ArticleSummary, Article)
+        .join(Article, Article.id == ArticleSummary.article_id)
+        .filter(ArticleSummary.id == summary_id, Article.client_name == client_name.strip())
+        .first()
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="summary_not_found")
-    return {"markdown": s.markdown, "article_id": s.article_id, "summary_id": s.id}
+    summary, article = row
+    subject = (
+        summary.subject or coverage_subject(article.url, article.domain, article.title, article.publication)
+        if article
+        else "Coverage Live: Publication"
+    )
+    return {
+        "subject": subject,
+        "markdown": summary.markdown,
+        "article_id": summary.article_id,
+        "summary_id": summary.id,
+        "validation_status": summary.validation_status,
+        "metrics": summary.metrics or {},
+    }
 
 
 @router.get("/history/search")
-def search_history(q: str, limit: int = 10, db: Session = Depends(get_db)):
-    limit = max(1, min(limit, 50))
-    q = (q or "").strip()
-    if not q:
+def search_history(
+    q: str = Query(min_length=1, max_length=500),
+    limit: int = Query(10, ge=1, le=50),
+    client_name: str = Query(min_length=1, max_length=128),
+    db: Session = Depends(get_db),
+):
+    query_text = q.strip()
+    if not query_text:
         return {"items": []}
     try:
-        vec = embed_texts([q])[0].tolist()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"embed_failed: {type(e).__name__}")
-    # Use pgvector cosine distance operator <#>
+        vector = embed_texts([query_text])[0].tolist()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="embed_failed") from exc
+
     sql = sql_text(
         """
-        SELECT a.id, a.url, a.title, a.domain, s.id AS summary_id
+        SELECT a.id, a.url, a.title, a.domain, a.client_name, s.id AS summary_id,
+               s.subject, s.validation_status, s.created_at
         FROM article_embeddings e
         JOIN articles a ON a.id = e.article_id
-        LEFT JOIN article_summaries s ON s.article_id = a.id
-        ORDER BY e.embedding <#> :v
-        LIMIT :lim
+        JOIN LATERAL (
+            SELECT article_summaries.*
+            FROM article_summaries
+            WHERE article_summaries.article_id = a.id
+            ORDER BY article_summaries.created_at DESC, article_summaries.id DESC
+            LIMIT 1
+        ) s ON TRUE
+        WHERE a.client_name = :client_name
+        ORDER BY e.embedding <#> :vector
+        LIMIT :limit
         """
     )
-    rows = db.execute(sql, {"v": vec, "lim": limit}).mappings().all()
-    return {"items": [dict(r) for r in rows], "limit": limit}
-
-
+    params = {"vector": vector, "limit": limit, "client_name": client_name.strip()}
+    rows = db.execute(sql, params).mappings().all()
+    return {"items": [dict(row) for row in rows], "limit": limit}

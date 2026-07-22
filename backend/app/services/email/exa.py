@@ -4,15 +4,32 @@ import os
 import httpx
 import logging
 
+from .http_safety import same_source_url
+
 
 logger = logging.getLogger("exa.search")
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 
 
-async def fetch_article_via_exa(url: str) -> tuple[str | None, str | None, str | None]:
+def extract_exact_article_result(
+    requested_url: str, results: list[dict]
+) -> tuple[str | None, str | None, str | None, str] | None:
+    for item in results:
+        result_url = str(item.get("url") or item.get("id") or "").strip()
+        if not result_url or not same_source_url(requested_url, result_url):
+            continue
+        title = (item.get("title") or "").strip() or None
+        desc = (item.get("summary") or item.get("description") or "").strip() or None
+        body = (item.get("text") or "").strip() or None
+        if body:
+            return title, desc, body, result_url
+    return None
+
+
+async def fetch_article_via_exa(url: str) -> tuple[str | None, str | None, str | None, str] | None:
     """Fetch article content via Exa AI search API."""
     if not EXA_API_KEY:
-        return None, None, None
+        return None
     headers = {
         "x-api-key": EXA_API_KEY,
         "Content-Type": "application/json",
@@ -29,26 +46,22 @@ async def fetch_article_via_exa(url: str) -> tuple[str | None, str | None, str |
         async with httpx.AsyncClient(timeout=httpx.Timeout(20)) as client:
             r = await client.post("https://api.exa.ai/search", headers=headers, json=payload)
             if r.status_code != 200:
-                return None, None, None
+                return None
             j = r.json()
             if not j:
-                return None, None, None
+                return None
             items = j.get("results") or []
             if not items:
-                return None, None, None
-            item = items[0]
-            title = (item.get("title") or "").strip() or None
-            desc = (item.get("summary") or "").strip() or None
-            body = (item.get("text") or "").strip() or None
-            return title, desc, body
+                return None
+            return extract_exact_article_result(url, items)
     except Exception:
-        return None, None, None
+        return None
 
 
 async def exa_search(query: str, num_results: int = 3) -> list[dict]:
     """Search using Exa AI API."""
     if not EXA_API_KEY:
-        logger.warning("Exa API key not set, skipping search for query: %s", query)
+        logger.warning("Exa API key not set, skipping search")
         return []
     headers = {
         "x-api-key": EXA_API_KEY,
@@ -62,32 +75,28 @@ async def exa_search(query: str, num_results: int = 3) -> list[dict]:
             "text": True,
         },
     }
-    logger.info("Exa search request: query=%s num_results=%s", query, num_results)
+    logger.info("Exa search request: num_results=%s", num_results)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(20)) as client:
             r = await client.post("https://api.exa.ai/search", headers=headers, json=payload)
             logger.info("Exa search response: status_code=%s", r.status_code)
             if r.status_code != 200:
-                logger.error("Exa search failed: status_code=%s response=%s", r.status_code, r.text[:500])
+                logger.error("Exa search failed: status_code=%s", r.status_code)
                 return []
             j = r.json() or {}
             items = j.get("results") or []
             logger.info("Exa search returned %s results", len(items))
             out = []
-            for idx, it in enumerate(items):
+            for it in items:
                 title = it.get("title")
                 url = it.get("url") or it.get("id")
                 text = it.get("text") or ""
-                text_preview = text[:200] if text else "(no text)"
-                logger.debug("Exa result[%s]: url=%s title=%s text_preview=%s", idx, url, title, text_preview)
                 out.append({
                     "title": title,
                     "url": url,
                     "text": text,
                 })
             return out
-    except Exception as e:
-        logger.exception("Exa search exception for query=%s: %s", query, e)
+    except Exception:
+        logger.exception("Exa search failed")
         return []
-
-

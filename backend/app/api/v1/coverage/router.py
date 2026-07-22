@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, case, literal
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from ....db import get_db
 from ....models import Hit, HitRead, AppSettings, Quote
 from ....services.coverage.pipeline import run_due as pipeline_run_due
 from ....services.coverage.sheets import upsert_from_sheet
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 from ....models import Quote
 from ....embedding import embed_texts
@@ -150,7 +150,9 @@ def mark_all_read(db: Session = Depends(get_db)):
 
 
 @router.post("/settings/email")
-def update_email_settings(emails: str, enabled: bool, db: Session = Depends(get_db)):
+def update_email_settings(
+    emails: str = Query(max_length=4_000), enabled: bool = False, db: Session = Depends(get_db)
+):
     s = db.query(AppSettings).first()
     if not s:
         s = AppSettings(emails=emails, email_enabled=enabled)
@@ -164,7 +166,7 @@ def update_email_settings(emails: str, enabled: bool, db: Session = Depends(get_
 
 
 @router.post("/scan")
-async def coverage_scan(limit: int = 20, db: Session = Depends(get_db)):
+async def coverage_scan(limit: int = Query(20, ge=1, le=50), db: Session = Depends(get_db)):
     processed = await pipeline_run_due(db, limit=limit)
     return {"processed": processed}
 
@@ -239,12 +241,12 @@ def delete_quote(quote_id: str, db: Session = Depends(get_db)):
 
 
 class PasteItem(BaseModel):
-    client_name: str
-    quote_text: str
+    client_name: str = Field(min_length=1, max_length=128)
+    quote_text: str = Field(min_length=12, max_length=10_000)
 
 
 class PasteIn(BaseModel):
-    items: List[PasteItem]
+    items: List[PasteItem] = Field(min_length=1, max_length=500)
 
 
 @router.post("/ingest/paste")
@@ -281,5 +283,4 @@ def coverage_paste_import(payload: PasteIn, db: Session = Depends(get_db)):
 
     db.commit()
     return {"ok": 1, "inserted": inserted, "updated": updated, "skipped": skipped}
-
 

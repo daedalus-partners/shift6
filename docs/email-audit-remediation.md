@@ -1,0 +1,52 @@
+# Shift6 Email Audit Remediation
+
+## Product contract
+
+Given a client name and one earned-media URL, Shift6 creates a client-ready coverage email tied to that exact page. It fails clearly when the source or provider cannot be verified. Directional publication metrics are shown only with visible source, method, observation date, confidence, and best-effort labeling.
+
+Every generated email has a deterministic subject:
+
+`Coverage Live: <Publication>`
+
+## Remediated failures
+
+- Submitted URLs, every redirect, `robots.txt`, and publisher about pages pass the same public-network validation. Response bytes, redirects, cache size, and cache age are bounded.
+- Direct article fetch is preferred. Exa content is accepted only when its normalized result URL is the submitted article URL.
+- Submitted, final, and canonical URLs are compared. The source body hash, fetch time, method, and URL identities are persisted.
+- Anchor text and destinations are retained as structured source data. Client links are no longer inferred from flattened body text.
+- Client mentions use normalized boundaries. Quotes require client attribution; unrelated quoted text is not selected.
+- Remote publisher text is sent to the model as untrusted JSON evidence. The model supplies only three subjective analysis fields. Headline, URL, links, quote, metrics, and labels are rendered deterministically from verified data.
+- Provider/source failure returns an error. There is no successful-looking offline placeholder.
+- Open PageRank is labeled as a directional `Site authority estimate`, never Moz Domain Authority. Monthly audience remains `Unavailable` without a verified provider.
+- Article identity is unique per client and URL. History, search, and summary reads require the client name and summaries are ordered from the summary record.
+- Coverage search results are re-fetched before persistence. Exact quote and client-name boundaries are verified against the fetched body.
+- Coverage hits are committed before an atomic email-delivery claim. SMTP requires verified TLS, and only source-verified hits can be sent.
+
+## Application controls
+
+- Production fails closed when `AUTH_MODE=none`.
+- `AUTH_MODE=cloudflare_access` validates the Access JWT issuer, audience, signature, expiry, and required claims. `AUTH_MODE=api_key` is available for non-browser API clients.
+- Paid routes have identity/IP quotas, concurrency limits, and required idempotency keys for mutating requests.
+- Request, upload, model-input, paste-import, and outbound-response sizes are bounded.
+- Client prompt slugs use a strict allowlist and resolved-path containment.
+- Production ports bind only to localhost; PostgreSQL has no published host port.
+- FastAPI, Starlette, python-multipart, and PyJWT are on the verified current compatible stack recorded in `backend/requirements.txt`.
+
+## Deployment
+
+1. Copy `.env.example` to the server's protected `.env` and configure either Cloudflare Access or API-key auth. Production defaults to Cloudflare Access and fails closed without its team domain and audience.
+2. Configure `CORS_ALLOW_ORIGINS=https://shift6.dwings.app` and the provider/SMTP variables. Do not use `AUTH_MODE=none` in production.
+3. Deploy backend and frontend together. The backend entrypoint runs the Alembic chain through `c3e5f7a9b1d2` before starting.
+4. Confirm `/health`, an authenticated `/docs` request, one known-good email fixture, one wrong-URL rejection, and one source-verified coverage hit.
+5. Monitor authentication failures, source-verification failures, provider errors, rate limits, and `email_delivery_status=failed`.
+
+## Verification commands
+
+```bash
+.venv/bin/pytest tests/test_email_integrity.py tests/test_security_controls.py tests/test_coverage_integrity.py -q
+cd frontend && npm run build
+cd backend && DATABASE_URL='postgresql+psycopg://user:pass@localhost/db' ../.venv/bin/alembic -c alembic.ini upgrade head --sql
+docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+```
+
+The older integration suites require the dedicated PostgreSQL test database and a running API. Do not point them at production.

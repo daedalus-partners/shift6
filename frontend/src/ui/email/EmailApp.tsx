@@ -7,29 +7,35 @@ export const EmailApp: React.FC = () => {
   const [articleUrl, setArticleUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<string>('')
+  const [subject, setSubject] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [history, setHistory] = useState<Array<{id:number; url:string; title?:string; domain?:string; created_at?:string; summary_id?:number|null}>>([])
   const [search, setSearch] = useState('')
 
   const loadHistory = async () => {
+    const client = clientName.trim()
+    if (!client) { setHistory([]); return }
     try {
-      const resp = await fetch('/api/v1/email/history')
+      const resp = await fetch(`/api/v1/email/history?client_name=${encodeURIComponent(client)}`)
       if (!resp.ok) return
       const j = await resp.json()
       setHistory(Array.isArray(j.items) ? j.items : [])
     } catch {}
   }
 
-  useEffect(() => { void loadHistory() }, [])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadHistory() }, 250)
+    return () => window.clearTimeout(timer)
+  }, [clientName])
 
   const onSubmit = async () => {
-    setError(''); setResult('')
+    setError(''); setResult(''); setSubject('')
     if (!clientName.trim() || !articleUrl.trim()) { setError('Please enter client and URL'); return }
     setLoading(true)
     try {
       const res = await fetch('/api/v1/email/summarize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() },
         body: JSON.stringify({ client_name: clientName.trim(), article_url: articleUrl.trim() })
       })
       let j: any = null
@@ -40,6 +46,7 @@ export const EmailApp: React.FC = () => {
       if (!res.ok) throw new Error(j?.detail || 'Failed to summarize')
       if (j?.markdown) {
         setResult(String(j.markdown))
+        setSubject(String(j.subject || 'Coverage Live: Publication'))
       } else if (j?.status === 'accepted') {
         setResult('Request accepted. This is a placeholder; processing will return Markdown soon.')
       } else {
@@ -54,23 +61,33 @@ export const EmailApp: React.FC = () => {
   }
 
   const onCopy = async () => {
-    try { await navigator.clipboard.writeText(result) } catch {}
+    try {
+      const prefix = subject ? `Subject: ${subject}\n\n` : ''
+      await navigator.clipboard.writeText(`${prefix}${result}`)
+    } catch {}
   }
 
   const openSummary = async (summaryId?: number|null) => {
     if (!summaryId) return
     try {
-      const r = await fetch(`/api/v1/email/summary/${summaryId}`)
+      const client = clientName.trim()
+      if (!client) return
+      const r = await fetch(`/api/v1/email/summary/${summaryId}?client_name=${encodeURIComponent(client)}`)
       const j = await r.json()
-      if (r.ok && j?.markdown) setResult(String(j.markdown))
+      if (r.ok && j?.markdown) {
+        setResult(String(j.markdown))
+        setSubject(String(j.subject || 'Coverage Live: Publication'))
+      }
     } catch {}
   }
 
   const onSearch = async () => {
     const q = search.trim()
     if (!q) { void loadHistory(); return }
+    const client = clientName.trim()
+    if (!client) { setError('Enter a client name before searching history'); return }
     try {
-      const r = await fetch(`/api/v1/email/history/search?q=${encodeURIComponent(q)}`)
+      const r = await fetch(`/api/v1/email/history/search?q=${encodeURIComponent(q)}&client_name=${encodeURIComponent(client)}`)
       const j = await r.json()
       if (r.ok && Array.isArray(j.items)) {
         setHistory(j.items)
@@ -91,9 +108,10 @@ export const EmailApp: React.FC = () => {
         <div style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0 }}>Generated Email</h3>
-            <button onClick={onCopy} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy</button>
+            <button onClick={onCopy} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy subject + email</button>
           </div>
           <div style={{ border: '1px solid #9e9e9e', padding: 12 }}>
+            <div style={{ marginBottom: 12 }}><strong>Subject:</strong> {subject}</div>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
           </div>
         </div>
@@ -106,7 +124,7 @@ export const EmailApp: React.FC = () => {
         </div>
         <ul style={{ listStyle: 'none', padding: 0, marginTop: 8 }}>
           {history.map(item => (
-            <li key={item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', borderTop: '1px solid #9e9e9e', padding: '6px 0' }}>
+            <li key={item.summary_id || item.id} style={{ display: 'flex', gap: 8, alignItems: 'center', borderTop: '1px solid #9e9e9e', padding: '6px 0' }}>
               <button onClick={()=>openSummary(item.summary_id || undefined)} style={{ border: '2px solid #000', background: '#fff', padding: '2px 6px' }}>Open</button>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || item.url}</span>
               <span style={{ color: '#555', fontSize: 12 }}>{item.domain}</span>
@@ -118,4 +136,3 @@ export const EmailApp: React.FC = () => {
     </div>
   )
 }
-
