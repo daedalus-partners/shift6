@@ -85,10 +85,6 @@ class IdempotencyRegistry:
 _idempotency = IdempotencyRegistry()
 
 
-def _is_production() -> bool:
-    return os.getenv("APP_ENV", "development").strip().lower() in {"prod", "production"}
-
-
 def _cloudflare_principal(assertion: str) -> Principal:
     try:
         import jwt
@@ -124,10 +120,9 @@ async def authenticate(request: Request) -> Principal | Response:
     if request.url.path in PUBLIC_PATHS:
         return Principal(subject="public-health", mode="public")
     if mode == "none":
-        if _is_production():
-            logger.error("AUTH_MODE=none is prohibited in production")
-            return JSONResponse({"detail": "authentication_not_configured"}, status_code=503)
-        return Principal(subject="local-development", mode="none")
+        # This deployment is intentionally public. Request-size, rate-limit,
+        # concurrency, and idempotency controls remain active in this mode.
+        return Principal(subject="unauthenticated", mode="none")
     if mode == "api_key":
         expected = os.getenv("SHIFT6_API_KEY", "")
         supplied = request.headers.get("x-shift6-api-key", "")

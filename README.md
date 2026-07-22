@@ -28,7 +28,7 @@ CF_ACCESS_AUDIENCE=your-application-aud-tag
 CORS_ALLOW_ORIGINS=https://shift6.dwings.app
 ```
 
-For API-only deployments, use `AUTH_MODE=api_key` and a long random `SHIFT6_API_KEY`. Production refuses `AUTH_MODE=none`.
+For API-only deployments, use `AUTH_MODE=api_key` and a long random `SHIFT6_API_KEY`. This installation intentionally permits `AUTH_MODE=none` in production; that mode is public and should be changed before exposing sensitive client data.
 
 See [.env.example](.env.example) for database, provider, size-limit, and auth variables. The backend entrypoint applies Alembic migrations before startup.
 
