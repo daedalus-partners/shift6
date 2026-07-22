@@ -26,7 +26,7 @@ Every generated email has a deterministic subject:
 
 - `AUTH_MODE=none` is an explicit public-production mode for this installation; request-size, quota, concurrency, and idempotency controls still apply.
 - `AUTH_MODE=cloudflare_access` validates the Access JWT issuer, audience, signature, expiry, and required claims. `AUTH_MODE=api_key` is available for non-browser API clients.
-- Paid routes have identity/IP quotas, concurrency limits, and required idempotency keys for mutating requests.
+- Paid routes have identity/IP quotas and concurrency limits. Valid idempotency keys receive duplicate-request protection when supplied, while cached browser bundles remain compatible when the header is absent.
 - Request, upload, model-input, paste-import, and outbound-response sizes are bounded.
 - Client prompt slugs use a strict allowlist and resolved-path containment.
 - Production ports bind only to localhost; PostgreSQL has no published host port.

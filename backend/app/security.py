@@ -166,9 +166,13 @@ class SecurityBoundaryMiddleware(BaseHTTPMiddleware):
         registry_key = None
         if expensive and request.method not in {"GET", "HEAD", "OPTIONS"}:
             idempotency_key = request.headers.get("idempotency-key", "").strip()
-            if not (16 <= len(idempotency_key) <= 128):
+            # Idempotency is additive protection, not a compatibility gate.
+            # An already-open browser may still run a bundle from before this
+            # header was introduced and must remain usable after deployment.
+            if idempotency_key and not (16 <= len(idempotency_key) <= 128):
                 return JSONResponse({"detail": "valid_idempotency_key_required"}, status_code=400)
-            registry_key = f"{identity.subject}:{request.url.path}:{idempotency_key}"
+            if idempotency_key:
+                registry_key = f"{identity.subject}:{request.url.path}:{idempotency_key}"
         limit = EXPENSIVE_RATE_LIMIT_PER_MINUTE if expensive else RATE_LIMIT_PER_MINUTE
         bucket = f"{identity.subject}:{peer}:{'expensive' if expensive else 'standard'}"
         if not await _limiter.allow(bucket, limit):
