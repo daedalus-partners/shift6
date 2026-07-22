@@ -53,7 +53,7 @@ export const EmailApp: React.FC = () => {
       }
       if (!res.ok) throw new Error(j?.detail || 'Failed to summarize')
       if (j?.markdown) {
-        const email = splitSubjectLine(String(j.markdown), j.subject)
+        const email = splitSubjectLine(String(j.body_markdown ?? j.markdown), j.subject)
         setResult(email.body)
         setSubject(email.subject)
       } else if (j?.status === 'accepted') {
@@ -84,7 +84,7 @@ export const EmailApp: React.FC = () => {
       const r = await fetch(`/api/v1/email/summary/${summaryId}?client_name=${encodeURIComponent(client)}`)
       const j = await r.json()
       if (r.ok && j?.markdown) {
-        const email = splitSubjectLine(String(j.markdown), j.subject)
+        const email = splitSubjectLine(String(j.body_markdown ?? j.markdown), j.subject)
         setResult(email.body)
         setSubject(email.subject)
       }

@@ -56,3 +56,15 @@ def markdown_with_subject(markdown: str, subject: str) -> str:
     if re.match(r"^Subject:\s*", body, flags=re.IGNORECASE):
         return body
     return f"Subject: {clean_subject}\n\n{body}"
+
+
+def markdown_without_subject(markdown: str) -> str:
+    """Return only the email body for clients with a dedicated subject field."""
+    body = str(markdown or "").lstrip("\ufeff \t\r\n")
+    return re.sub(
+        r"^Subject:\s*[^\r\n]+\r?\n(?:\r?\n)?",
+        "",
+        body,
+        count=1,
+        flags=re.IGNORECASE,
+    ).lstrip()
