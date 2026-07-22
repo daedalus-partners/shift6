@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -55,6 +55,8 @@ export const EmailApp: React.FC = () => {
   const [result, setResult] = useState<string>('')
   const [subject, setSubject] = useState<string>('')
   const [copyStatus, setCopyStatus] = useState<string>('')
+  const [manualCopyText, setManualCopyText] = useState<string>('')
+  const manualCopyRef = useRef<HTMLTextAreaElement | null>(null)
   const [error, setError] = useState<string>('')
   const [history, setHistory] = useState<Array<{id:number; url:string; title?:string; domain?:string; created_at?:string; summary_id?:number|null}>>([])
   const [search, setSearch] = useState('')
@@ -75,8 +77,14 @@ export const EmailApp: React.FC = () => {
     return () => window.clearTimeout(timer)
   }, [clientName])
 
+  useEffect(() => {
+    if (!manualCopyText) return
+    manualCopyRef.current?.focus()
+    manualCopyRef.current?.select()
+  }, [manualCopyText])
+
   const onSubmit = async () => {
-    setError(''); setResult(''); setSubject(''); setCopyStatus('')
+    setError(''); setResult(''); setSubject(''); setCopyStatus(''); setManualCopyText('')
     if (!clientName.trim() || !articleUrl.trim()) { setError('Please enter client and URL'); return }
     setLoading(true)
     try {
@@ -110,13 +118,16 @@ export const EmailApp: React.FC = () => {
 
   const onCopy = async () => {
     const prefix = subject ? `Subject: ${subject}\n\n` : ''
+    const emailText = `${prefix}${result}`
+    setManualCopyText('')
     setCopyStatus('Copying…')
     try {
-      await copyText(`${prefix}${result}`)
+      await copyText(emailText)
       setCopyStatus('Copied')
       window.setTimeout(() => setCopyStatus(''), 2500)
     } catch {
-      setCopyStatus('Copy failed — select the email and copy manually')
+      setManualCopyText(emailText)
+      setCopyStatus('Clipboard blocked — press Cmd+C or Control+C below')
     }
   }
 
@@ -167,6 +178,23 @@ export const EmailApp: React.FC = () => {
               <button onClick={onCopy} disabled={copyStatus === 'Copying…'} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy subject + email</button>
             </div>
           </div>
+          {manualCopyText && (
+            <div style={{ border: '2px solid #000', padding: 8, marginTop: 8 }}>
+              <label htmlFor="copy-ready-email" style={{ display: 'block', marginBottom: 6 }}>
+                The complete email is selected. Press Cmd+C or Control+C to copy it.
+              </label>
+              <textarea
+                id="copy-ready-email"
+                ref={manualCopyRef}
+                value={manualCopyText}
+                readOnly
+                rows={8}
+                onFocus={event => event.currentTarget.select()}
+                style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #000', padding: 8 }}
+              />
+              <button onClick={() => { setManualCopyText(''); setCopyStatus('') }} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px', marginTop: 6 }}>Close</button>
+            </div>
+          )}
           <div style={{ border: '1px solid #9e9e9e', padding: 12 }}>
             <div style={{ marginBottom: 12 }}><strong>Subject:</strong> {subject}</div>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
