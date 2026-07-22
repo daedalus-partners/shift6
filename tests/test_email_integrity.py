@@ -109,6 +109,7 @@ def test_client_links_exclude_publisher_navigation_and_share_links():
         {"text": "Hawaiian Airlines story", "url": "https://publisher.example/news/hawaiian-airlines-story/"},
         {"text": "Share", "url": "https://facebook.com/sharer/sharer.php?u=hawaiian-airlines"},
         {"text": "Hawaiian Airlines analysis", "url": "https://industry-news.example/related-story"},
+        {"text": "Hawaiian analysis", "url": "https://crankyflier.com/2026/07/22/hawaiian-fleet-analysis"},
         {"text": "Official site", "url": "https://www.hawaiianairlines.com/about-us"},
     ]
     assert extract_client_links(
