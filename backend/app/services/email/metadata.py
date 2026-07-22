@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import hashlib
+import re
 import httpx
 from datetime import datetime, timezone
 from urllib.parse import urljoin
@@ -17,6 +18,19 @@ logger = logging.getLogger("metadata.da_muv")
 
 class SourceVerificationError(ValueError):
     pass
+
+
+def clean_outlet_description(value: str) -> str:
+    """Normalize publisher-authored metadata without inventing new copy."""
+    text = " ".join(str(value or "").split()).strip()
+    text = re.sub(
+        r"([.!?])\s+([a-z])",
+        lambda match: f"{match.group(1)} {match.group(2).upper()}",
+        text,
+    )
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text[:400]
 
 async def lookup_da_via_openpagerank(clean_domain: str) -> str | None:
     """
@@ -91,14 +105,14 @@ async def try_fetch_about_description(domain: str) -> str | None:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 og = soup.find("meta", attrs={"property": "og:description"})
                 if og and og.get("content"):
-                    return str(og["content"]).strip()[:400]
+                    return clean_outlet_description(str(og["content"]))
                 meta_desc = soup.find("meta", attrs={"name": "description"})
                 if meta_desc and meta_desc.get("content"):
-                    return str(meta_desc["content"]).strip()[:400]
+                    return clean_outlet_description(str(meta_desc["content"]))
                 for paragraph in soup.find_all("p"):
                     text = paragraph.get_text(" ", strip=True)
                     if len(text) > 50:
-                        return text[:400]
+                        return clean_outlet_description(text)
         except Exception:
             continue
     return None

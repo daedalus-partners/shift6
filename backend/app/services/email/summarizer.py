@@ -137,9 +137,11 @@ def _metric_line(metric: dict | None, fallback_label: str) -> str:
     confidence = _escape_markdown(item.get("confidence") or "low")
     observed = _escape_markdown(item.get("observed_at") or "not recorded")
     if value.lower() == "unavailable":
-        estimate_label = "Unavailable"
-    else:
-        estimate_label = "Best-effort estimate" if item.get("estimated", True) else "Reported value"
+        return (
+            f"- {label}: **Unavailable** — Source: {source}; "
+            f"Method: {method}; Observed: {observed}"
+        )
+    estimate_label = "Best-effort estimate" if item.get("estimated", True) else "Reported value"
     return (
         f"- {label}: **{value}** — {estimate_label}; Source: {source}; "
         f"Method: {method}; Confidence: {confidence}; Observed: {observed}"
@@ -149,7 +151,7 @@ def _metric_line(metric: dict | None, fallback_label: str) -> str:
 def render_verified_email(data: dict, analysis: dict) -> str:
     verified = _validate_analysis(analysis)
     title = _escape_markdown(data.get("title") or "Untitled coverage")
-    domain = _escape_markdown(data.get("domain") or "Publication")
+    publication = _escape_markdown(data.get("publication") or data.get("domain") or "Publication")
     url = _safe_markdown_url(data.get("url"))
 
     description = _escape_markdown(data.get("outlet_description") or "No publication description available.")
@@ -168,11 +170,16 @@ def render_verified_email(data: dict, analysis: dict) -> str:
 
     link_lines = "\n".join(f"- [{_escape_markdown(link)}]({link})" for link in client_links)
     if not link_lines:
-        link_lines = "- No verified direct client links found."
-    mention_lines = "\n".join(f"- {mention}" for mention in mentions[:3]) or "- No exact client-name mention found."
+        client_name = _escape_markdown(data.get("client_name") or "the client")
+        link_lines = f"- No verified direct link to {client_name} was found in the article."
+    mention_lines = (
+        f"- Exact client-name mentions found: {len(mentions)}."
+        if mentions
+        else "- No exact client-name mention found."
+    )
 
     return (
-        f"{domain} — [{title}]({url})\n\n"
+        f"{publication} — [{title}]({url})\n\n"
         "## Outlet Snapshot\n\n"
         f"- {description}\n"
         f"{authority_line}\n"
@@ -180,15 +187,38 @@ def render_verified_email(data: dict, analysis: dict) -> str:
         "## Verified Links & Mentions\n\n"
         f"{link_lines}\n\n"
         f"{mention_lines}\n\n"
-        "## Sentiment & Message Pull-Through\n\n"
+        "## Message Pull-Through\n\n"
         f"- {_escape_markdown(verified['message_pull_through'])}\n\n"
         "## Quote Highlight\n\n"
         f"- {quote_line}\n\n"
-        "## Audience / Strategic Value\n\n"
+        "## Strategic Value\n\n"
         f"- {_escape_markdown(verified['strategic_value'])}\n\n"
         "## Performance / Reach\n\n"
         f"- {_escape_markdown(verified['performance_reach'])}\n"
     )
+
+
+def _evidence_only_analysis(data: dict) -> dict[str, str]:
+    client_name = _clean_text(data.get("client_name"), limit=128) or "The client"
+    publication = _clean_text(
+        data.get("publication") or data.get("domain") or "the publication",
+        limit=128,
+    )
+    mentions = [_clean_text(item, limit=1_200) for item in data.get("mentions") or [] if item]
+    if mentions:
+        pull_through = f"Verified article language: {mentions[0]}"
+        strategic_value = (
+            f"This placement introduces {client_name} to {publication}'s audience in the verified context above. "
+            "Audience response and broader strategic impact have not been measured."
+        )
+    else:
+        pull_through = "No exact client-name mention was found in the verified article text."
+        strategic_value = "The supplied evidence is insufficient to assess strategic value."
+    return {
+        "message_pull_through": pull_through,
+        "strategic_value": strategic_value,
+        "performance_reach": "No verified article-level reach or performance data is available.",
+    }
 
 
 async def _generate_analysis(data: dict) -> dict:
@@ -249,9 +279,7 @@ async def _generate_analysis(data: dict) -> dict:
 
 
 async def summarize_to_markdown(data: dict) -> str:
-    try:
-        analysis = await _generate_analysis(data)
-    except SummaryGenerationError as exc:
-        logger.warning("Using conservative summary fallback after model failure: %s", exc)
-        analysis = _fallback_analysis(data)
-    return render_verified_email(data, analysis)
+    # Client-facing factual sections are deterministic. Free-form model output
+    # previously changed source modality ("says can reduce" -> "reduces") and
+    # is not safe enough for a verified coverage report.
+    return render_verified_email(data, _evidence_only_analysis(data))

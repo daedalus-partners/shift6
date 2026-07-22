@@ -20,12 +20,13 @@ def client_name_pattern(client_name: str) -> re.Pattern[str] | None:
     return re.compile(rf"(?<!\w){expression}(?!\w)", re.IGNORECASE)
 
 
-def _mention_snippet(body: str, start: int, end: int, *, limit: int = 420) -> str:
-    sentence_breaks = ".!?\n"
-    left = max(body.rfind(mark, 0, start) for mark in sentence_breaks) + 1
-    right_candidates = [body.find(mark, end) for mark in sentence_breaks]
-    right_candidates = [index for index in right_candidates if index >= 0]
-    right = min(right_candidates) + 1 if right_candidates else len(body)
+def _mention_snippet(body: str, start: int, end: int, *, limit: int = 600) -> str:
+    # Article paragraphs are newline-delimited by the scraper. Prefer that
+    # verified source unit so decimal points (for example £20.75 million) are
+    # never mistaken for sentence boundaries.
+    left = body.rfind("\n", 0, start) + 1
+    next_newline = body.find("\n", end)
+    right = next_newline if next_newline >= 0 else len(body)
     snippet = re.sub(r"\s+", " ", body[left:right]).strip()
     if len(snippet) <= limit:
         return snippet
