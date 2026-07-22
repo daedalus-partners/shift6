@@ -90,11 +90,25 @@ def test_client_mention_prefers_article_prose_over_navigation():
     )
 
 
+def test_client_mention_uses_title_topic_to_select_central_source_language():
+    body = (
+        "The Boeing 717s flying for Hawaiian Airlines are entering their final years.\n"
+        "Hawaiian Airlines To Replace The Boeing 717 With Larger 737-800"
+    )
+    mentions, _ = extract_mentions_and_links(
+        "Hawaiian Airlines",
+        body,
+        "Hawaiian Airlines To Replace The Boeing 717 With Larger 737-800",
+    )
+    assert mentions[0] == "Hawaiian Airlines To Replace The Boeing 717 With Larger 737-800"
+
+
 def test_client_links_exclude_publisher_navigation_and_share_links():
     links = [
         {"text": "Airlines", "url": "https://publisher.example/news/airlines/"},
         {"text": "Hawaiian Airlines story", "url": "https://publisher.example/news/hawaiian-airlines-story/"},
         {"text": "Share", "url": "https://facebook.com/sharer/sharer.php?u=hawaiian-airlines"},
+        {"text": "Hawaiian Airlines analysis", "url": "https://industry-news.example/related-story"},
         {"text": "Official site", "url": "https://www.hawaiianairlines.com/about-us"},
     ]
     assert extract_client_links(
