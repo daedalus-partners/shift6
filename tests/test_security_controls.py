@@ -12,12 +12,12 @@ from app.prompt_paths import PROMPT_DIR, prompt_path, validate_client_slug
 from app.security import IdempotencyRegistry
 
 
-def test_production_without_auth_fails_closed(monkeypatch):
+def test_production_without_auth_remains_public(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("AUTH_MODE", "none")
     with TestClient(app) as client:
-        response = client.get("/clients/")
-    assert response.status_code == 503
+        response = client.get("/docs")
+    assert response.status_code == 200
 
 
 def test_api_key_mode_rejects_missing_key(monkeypatch):

@@ -24,7 +24,7 @@ Every generated email has a deterministic subject:
 
 ## Application controls
 
-- Production fails closed when `AUTH_MODE=none`.
+- `AUTH_MODE=none` is an explicit public-production mode for this installation; request-size, quota, concurrency, and idempotency controls still apply.
 - `AUTH_MODE=cloudflare_access` validates the Access JWT issuer, audience, signature, expiry, and required claims. `AUTH_MODE=api_key` is available for non-browser API clients.
 - Paid routes have identity/IP quotas, concurrency limits, and required idempotency keys for mutating requests.
 - Request, upload, model-input, paste-import, and outbound-response sizes are bounded.
@@ -34,10 +34,10 @@ Every generated email has a deterministic subject:
 
 ## Deployment
 
-1. Copy `.env.example` to the server's protected `.env` and configure either Cloudflare Access or API-key auth. Production defaults to Cloudflare Access and fails closed without its team domain and audience.
-2. Configure `CORS_ALLOW_ORIGINS=https://shift6.dwings.app` and the provider/SMTP variables. Do not use `AUTH_MODE=none` in production.
+1. Copy `.env.example` to the server's protected `.env`. This installation currently uses public `AUTH_MODE=none`; configure Cloudflare Access or API-key authentication before storing sensitive client data.
+2. Configure `CORS_ALLOW_ORIGINS=https://shift6.dwings.app` and the provider/SMTP variables.
 3. Deploy backend and frontend together. The backend entrypoint runs the Alembic chain through `c3e5f7a9b1d2` before starting.
-4. Confirm `/health`, an authenticated `/docs` request, one known-good email fixture, one wrong-URL rejection, and one source-verified coverage hit.
+4. Confirm `/health`, `/docs`, one known-good email fixture, one wrong-URL rejection, and one source-verified coverage hit.
 5. Monitor authentication failures, source-verification failures, provider errors, rate limits, and `email_delivery_status=failed`.
 
 ## Verification commands
