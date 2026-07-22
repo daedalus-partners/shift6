@@ -1,58 +1,44 @@
 # Shift6 – Client Quote Generator
 
-Python FastAPI backend + React TypeScript frontend to generate client media quotes with RAG.
+FastAPI, PostgreSQL/pgvector, and React/Vite application for client media quotes, coverage tracking, task capture, and verified coverage-email generation.
 
-## Quick start (dev)
-
-Requirements: Docker + Docker Compose.
+## Development
 
 ```bash
-docker compose --profile dev up -d --build
-# API: http://localhost:8000/docs
-# FE:  http://localhost:5173
+cp .env.example .env
+docker compose up -d --build
 ```
 
-## Profiles
-- dev: backend, frontend, postgres. No Cloudflare, no login.
-- prod: adds cloudflared (Tunnel). Gate with Cloudflare Access.
+The default override publishes the API at `http://localhost:8000` and frontend at `http://localhost:5173`. Development may use `APP_ENV=development` and `AUTH_MODE=none`.
+
+## Production
 
 ```bash
-# prod example (requires CLOUDFLARED_TUNNEL_TOKEN set in .env)
-docker compose --profile prod up -d --build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-## Environment
-Place variables in project root `.env` (file exists in runtime):
-- BACKEND_PORT=8000
-- FRONTEND_PORT=5173
-- DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/quotes
-- POSTGRES_USER=postgres
-- POSTGRES_PASSWORD=postgres
-- POSTGRES_DB=quotes
-- AUTH_MODE=none
-- CORS_ALLOW_ORIGINS=http://localhost:5173
-- OPENPAGERANK_API_KEY =...
-- OPENROUTER_API_KEY=...
-- OPENROUTER_MODEL_ID=anthropic/claude-3.7-sonnet
-- EXA_API_KEY=...
-- CLOUDFLARED_TUNNEL_TOKEN=...
+Production binds the API and frontend to localhost for the reverse proxy and does not publish PostgreSQL. It sets `APP_ENV=production` and defaults to `AUTH_MODE=cloudflare_access`.
 
-## Project layout
-- backend/ FastAPI app, Alembic, models
-- frontend/ React + Vite app
-- docker-compose.yml profiles for dev/prod
-- .cursor/scratchpad.md planner/executor doc
+Required Cloudflare Access settings:
 
-## Smoke tests
+```dotenv
+AUTH_MODE=cloudflare_access
+CF_ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+CF_ACCESS_AUDIENCE=your-application-aud-tag
+CORS_ALLOW_ORIGINS=https://shift6.dwings.app
+```
+
+For API-only deployments, use `AUTH_MODE=api_key` and a long random `SHIFT6_API_KEY`. Production refuses `AUTH_MODE=none`.
+
+See [.env.example](.env.example) for database, provider, size-limit, and auth variables. The backend entrypoint applies Alembic migrations before startup.
+
+## Verification
+
 ```bash
-curl http://localhost:8000/health
-curl -s -X POST http://localhost:8000/clients/ -H 'Content-Type: application/json' -d '{"slug":"demo","name":"Demo Client"}'
-curl -s http://localhost:8000/clients/
-curl -s -X POST http://localhost:8000/knowledge/1/notes -H 'Content-Type: application/json' -d '{"text":"hello"}'
+.venv/bin/pytest tests/test_email_integrity.py tests/test_security_controls.py tests/test_coverage_integrity.py -q
+cd frontend && npm run build
 ```
 
-## Notes
-- Dev auth is disabled via AUTH_MODE=none.
-- System prompts live in backend/system_prompts (to be added with client slugs).
-- Embeddings: will use Google Embedding Gemma.
+The legacy API/coverage integration tests expect a dedicated PostgreSQL database and running API. Never run them against production.
 
+Detailed audit remediation and deployment checks are in [docs/email-audit-remediation.md](docs/email-audit-remediation.md).

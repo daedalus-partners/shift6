@@ -12,6 +12,9 @@ services:
     # Only expose on localhost, not to the world (Caddy will proxy)
     ports:
       - "127.0.0.1:8000:8000"
+    environment:
+      - APP_ENV=production
+      - AUTH_MODE=${AUTH_MODE:-cloudflare_access}
 
   frontend:
     build:

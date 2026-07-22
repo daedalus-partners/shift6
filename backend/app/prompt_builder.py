@@ -8,6 +8,7 @@ from .models import Client, KnowledgeChunk, KnowledgeEmbedding, StyleSnippet, Sa
 import os
 import httpx
 from .embedding import embed_texts
+from .prompt_paths import prompt_path
 
 
 def retrieve_top_chunks(db: Session, client_id: int, query: str, k: int = 6) -> List[Tuple[int, str, float]]:
@@ -32,14 +33,13 @@ def retrieve_top_chunks(db: Session, client_id: int, query: str, k: int = 6) -> 
 
 def _load_system_prompt(slug: str | None, client_name: str) -> str:
     if slug:
-        path = os.path.join(os.path.dirname(__file__), "..", "system_prompts", f"{slug}.md")
-        path = os.path.abspath(path)
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
+        try:
+            path = prompt_path(slug)
+            if path.exists():
+                with path.open("r", encoding="utf-8") as f:
                     return f.read().replace("{{CLIENT_NAME}}", client_name)
-            except Exception:
-                pass
+        except (OSError, ValueError):
+            pass
     # default
     return (
         f"You are a media quote assistant for {client_name}.\n"

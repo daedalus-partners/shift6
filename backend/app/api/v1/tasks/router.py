@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import os
 import logging
+import json
 import httpx
 from datetime import datetime
 from typing import Optional, List
+from urllib.parse import urljoin, urlsplit
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -21,24 +23,18 @@ GOOGLE_SCRIPT_URL = os.getenv("GOOGLE_SCRIPT_URL", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL_ID = os.getenv("OPENROUTER_MODEL_ID", "openai/gpt-4o-mini")
 
-# #region agent log
-DEBUG_LOG_PATH = "/app/debug.log"
-import json as _json
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
-    try:
-        with open(DEBUG_LOG_PATH, "a") as f:
-            f.write(_json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data, "timestamp": datetime.now().isoformat()}) + "\n")
-    except: pass
-# #endregion
-
-# #region agent log
-_debug_log("A,B,E", "router.py:init", "Environment variables at module load", {"GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:50] if GOOGLE_SCRIPT_URL else "NOT_SET", "OPENROUTER_MODEL_ID": OPENROUTER_MODEL_ID, "OPENROUTER_API_KEY_SET": bool(OPENROUTER_API_KEY)})
-# #endregion
+GOOGLE_SCRIPT_ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv(
+        "GOOGLE_SCRIPT_ALLOWED_HOSTS", "script.google.com,script.googleusercontent.com"
+    ).split(",")
+    if host.strip()
+}
 
 
 class ChatRequest(BaseModel):
-    message: str
-    userId: Optional[str] = "web-user"
+    message: str = Field(min_length=1, max_length=10_000)
+    userId: Optional[str] = Field("web-user", max_length=128)
 
 
 class ChatResponse(BaseModel):
@@ -64,18 +60,15 @@ class TasksResponse(BaseModel):
 
 
 class ParsedTask(BaseModel):
-    people: List[str]
-    client: str
-    summary: str
-    dueDate: str
-    confidence: float
+    people: List[str] = Field(min_length=1, max_length=20)
+    client: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=100)
+    dueDate: str = Field(min_length=1, max_length=32)
+    confidence: float = Field(ge=0.0, le=1.0)
 
 
 async def parse_message_with_llm(message: str) -> dict:
     """Parse a message into tasks using OpenRouter LLM."""
-    # #region agent log
-    _debug_log("A", "parse_message_with_llm:entry", "Starting LLM parse", {"message_len": len(message), "model": OPENROUTER_MODEL_ID, "api_key_set": bool(OPENROUTER_API_KEY)})
-    # #endregion
     if not OPENROUTER_API_KEY:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured")
 
@@ -83,7 +76,7 @@ async def parse_message_with_llm(message: str) -> dict:
     prompt = f"""Parse this message into tasks and return ONLY a JSON object, no other text.
 
 Current Date: {current_date}
-Message: "{message}"
+Message JSON value: {json.dumps(message)}
 
 Rules:
 1. Split multi-task messages into separate tasks (look for bullet points, "AND", or clear task boundaries)
@@ -107,8 +100,7 @@ Return format:
       "dueDate": "2024-01-15",
       "confidence": 0.9
     }}
-  ],
-  "originalMessage": "{message}"
+  ]
 }}"""
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -131,11 +123,8 @@ Return format:
             },
         )
 
-        # #region agent log
-        _debug_log("A", "parse_message_with_llm:response", "OpenRouter response received", {"status_code": response.status_code, "response_text_preview": response.text[:500] if response.text else "empty"})
-        # #endregion
         if response.status_code != 200:
-            logger.error(f"OpenRouter API error: {response.status_code} - {response.text}")
+            logger.error("OpenRouter task parser returned status=%s", response.status_code)
             raise HTTPException(status_code=500, detail="LLM API request failed")
 
         data = response.json()
@@ -145,7 +134,6 @@ Return format:
         content = data["choices"][0]["message"]["content"]
 
         # Extract JSON from response
-        import json
         import re
 
         json_match = re.search(r"\{[\s\S]*\}", content)
@@ -155,120 +143,118 @@ Return format:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
-            logger.warning(f"Failed to parse LLM response as JSON: {content}")
-            # Fallback response
-            parsed = {
-                "tasks": [
-                    {
-                        "people": ["team"],
-                        "client": "Unsure",
-                        "summary": message[:100] if len(message) > 100 else message,
-                        "dueDate": "Unsure",
-                        "confidence": 0.5,
-                    }
-                ],
-                "originalMessage": message,
-            }
+            logger.warning("Task parser returned invalid JSON")
+            raise HTTPException(status_code=502, detail="Task parser returned invalid output")
 
-        # Normalize tasks
-        for task in parsed.get("tasks", []):
-            task["people"] = [p.lower().strip() for p in task.get("people", ["team"]) if p]
-            task["summary"] = (task.get("summary", "Task") or "Task")[:100]
-            task["client"] = task.get("client") or "Unsure"
-            task["dueDate"] = task.get("dueDate") or "Unsure"
-            task["confidence"] = task.get("confidence", 0.8)
+        raw_tasks = parsed.get("tasks")
+        if not isinstance(raw_tasks, list) or not 1 <= len(raw_tasks) <= 20:
+            raise HTTPException(status_code=502, detail="Task parser returned an invalid task list")
+        try:
+            tasks = [ParsedTask.model_validate(item) for item in raw_tasks]
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Task parser returned invalid task fields") from exc
+        normalized = []
+        for task in tasks:
+            item = task.model_dump()
+            item["people"] = [person.lower().strip()[:128] for person in item["people"] if person.strip()]
+            if not item["people"]:
+                item["people"] = ["team"]
+            normalized.append(item)
+        return {"tasks": normalized}
 
-        return parsed
+
+def _validate_google_script_url(url: str) -> str:
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in GOOGLE_SCRIPT_ALLOWED_HOSTS:
+        raise HTTPException(status_code=500, detail="Google Script URL is not an allowed HTTPS destination")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=500, detail="Google Script URL must not contain credentials")
+    return url
+
+
+async def _google_script_request(client: httpx.AsyncClient, payload: dict) -> httpx.Response:
+    current = _validate_google_script_url(GOOGLE_SCRIPT_URL)
+    method = "POST"
+    for redirect_count in range(6):
+        response = await client.request(
+            method,
+            current,
+            headers={"Content-Type": "application/json"} if method == "POST" else None,
+            json=payload if method == "POST" else None,
+        )
+        if len(response.content) > 1024 * 1024:
+            raise HTTPException(status_code=502, detail="Google Script response was too large")
+        if not response.is_redirect:
+            return response
+        if redirect_count >= 5 or not response.headers.get("location"):
+            raise HTTPException(status_code=502, detail="Google Script redirect was invalid")
+        current = _validate_google_script_url(urljoin(current, response.headers["location"]))
+        if response.status_code in {301, 302, 303}:
+            method = "GET"
+    raise HTTPException(status_code=502, detail="Google Script redirect limit exceeded")
 
 
 async def add_tasks_to_sheet(tasks: List[dict]) -> dict:
     """Add tasks to Google Sheets via Apps Script webhook."""
-    # #region agent log
-    _debug_log("B,C,D", "add_tasks_to_sheet:entry", "Starting add_tasks", {"task_count": len(tasks), "GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:80] if GOOGLE_SCRIPT_URL else "NOT_SET"})
-    # #endregion
     if not GOOGLE_SCRIPT_URL:
-        # #region agent log
-        _debug_log("B", "add_tasks_to_sheet:no_url", "GOOGLE_SCRIPT_URL not configured", {})
-        # #endregion
         return {"status": "error", "message": "GOOGLE_SCRIPT_URL not configured"}
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.post(
-                GOOGLE_SCRIPT_URL,
-                headers={"Content-Type": "application/json"},
-                json={"action": "add_tasks", "tasks": tasks},
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            response = await _google_script_request(
+                client,
+                {"action": "add_tasks", "tasks": tasks},
             )
-
-            # #region agent log
-            _debug_log("C,D", "add_tasks_to_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
-            # #endregion
             if response.status_code == 403:
-                logger.error(f"Google Script 403 Forbidden - check deployment permissions (must be 'Anyone')")
-                return {"status": "error", "message": "Google Sheet access denied. The Apps Script deployment needs 'Anyone' access."}
+                logger.error("Google Script returned 403; check deployment permissions")
+                return {
+                    "status": "error",
+                    "message": "Google Sheet access denied. The Apps Script deployment needs 'Anyone' access.",
+                }
             if response.status_code != 200:
-                logger.error(f"Google Script error: {response.status_code} - {response.text[:200]}")
+                logger.error("Google Script returned status=%s", response.status_code)
                 return {"status": "error", "message": f"Google Sheet returned status {response.status_code}"}
 
             data = response.json()
             if data.get("status") != "success":
-                return {"status": "error", "message": data.get("error", "Unknown error from Google Sheet")}
+                message = str(data.get("error") or "Unknown error from Google Sheet")[:300]
+                return {"status": "error", "message": message}
 
             return data
-    except Exception as e:
-        # #region agent log
-        _debug_log("C,D", "add_tasks_to_sheet:exception", "Exception in add_tasks", {"error": str(e), "error_type": type(e).__name__})
-        # #endregion
-        logger.error(f"Failed to add tasks to sheet: {e}")
-        return {"status": "error", "message": f"Could not reach Google Sheet: {e}"}
+    except HTTPException as exc:
+        logger.warning("Google Script request rejected: %s", exc.detail)
+        return {"status": "error", "message": str(exc.detail)[:300]}
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Google Script request failed: %s", type(exc).__name__)
+        return {"status": "error", "message": "Could not reach Google Sheet."}
 
 
 async def get_tasks_from_sheet(status_filter: Optional[str] = None) -> List[dict]:
     """Get tasks from Google Sheets via Apps Script webhook."""
-    # #region agent log
-    _debug_log("B,C,D,E", "get_tasks_from_sheet:entry", "Starting get_tasks", {"GOOGLE_SCRIPT_URL": GOOGLE_SCRIPT_URL[:80] if GOOGLE_SCRIPT_URL else "NOT_SET", "status_filter": status_filter})
-    # #endregion
     if not GOOGLE_SCRIPT_URL:
-        # #region agent log
-        _debug_log("B,E", "get_tasks_from_sheet:no_url", "GOOGLE_SCRIPT_URL not configured", {})
-        # #endregion
         logger.warning("GOOGLE_SCRIPT_URL not configured, returning empty task list")
         return []
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
             payload = {"action": "get_tasks"}
             if status_filter:
                 payload["status"] = status_filter
 
-            # #region agent log
-            _debug_log("C,D", "get_tasks_from_sheet:request", "Sending request to Google Script", {"url": GOOGLE_SCRIPT_URL, "payload": payload})
-            # #endregion
-            response = await client.post(
-                GOOGLE_SCRIPT_URL,
-                headers={"Content-Type": "application/json"},
-                json=payload,
-            )
-
-            # #region agent log
-            _debug_log("C,D", "get_tasks_from_sheet:response", "Google Script response", {"status_code": response.status_code, "response_text": response.text[:500] if response.text else "empty"})
-            # #endregion
+            response = await _google_script_request(client, payload)
             if response.status_code != 200:
-                logger.error(f"Google Script error: {response.status_code} - {response.text}")
+                logger.error("Google Script returned status=%s", response.status_code)
                 return []  # Return empty list instead of failing
 
             data = response.json()
-            # #region agent log
-            _debug_log("C", "get_tasks_from_sheet:parsed", "Parsed response", {"status": data.get("status"), "task_count": len(data.get("tasks", [])) if data.get("tasks") else 0, "error": data.get("error")})
-            # #endregion
             if data.get("status") != "success":
                 logger.error(f"Google Script returned error: {data.get('error', 'Unknown')}")
                 return []
-    except Exception as e:
-        # #region agent log
-        _debug_log("C,D", "get_tasks_from_sheet:exception", "Exception occurred", {"error": str(e), "error_type": type(e).__name__})
-        # #endregion
-        logger.error(f"Failed to fetch tasks from sheet: {e}")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to fetch tasks from sheet")
         return []
 
     return data.get("tasks", [])
@@ -278,7 +264,7 @@ async def get_tasks_from_sheet(status_filter: Optional[str] = None) -> List[dict
 async def chat_add_task(request: ChatRequest):
     """Process a chat message and add tasks to the sheet."""
     try:
-        logger.info(f"Processing chat message: {request.message[:100]}...")
+        logger.info("Processing task message with length=%s", len(request.message))
 
         # Parse message with LLM
         parsed = await parse_message_with_llm(request.message)

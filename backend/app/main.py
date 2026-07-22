@@ -9,6 +9,7 @@ from .api.v1.coverage.router import router as coverage_router
 from .api.v1.settings.router import router as settings_router
 from .api.v1.tasks.router import router as tasks_router
 from .routers_retrieval import router as retrieval_router
+from .security import SecurityBoundaryMiddleware
 
 # Configure logging
 # Default to DEBUG for dev (AUTH_MODE=none), INFO for prod
@@ -28,6 +29,7 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="Shift6 Client Quote Generator API")
+app.add_middleware(SecurityBoundaryMiddleware)
 allowed_origins_env = os.getenv(
     "CORS_ALLOW_ORIGINS",
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1",

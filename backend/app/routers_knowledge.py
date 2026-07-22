@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from pathlib import Path
 from datetime import datetime
 from typing import List
 
@@ -14,8 +15,8 @@ from .db import SessionLocal
 from .models import KnowledgeFile, KnowledgeChunk, KnowledgeEmbedding
 from .schemas import KnowledgeNoteCreate, KnowledgeFileOut
 
-UPLOAD_DIR = "/data/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/uploads")).resolve()
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -76,7 +77,17 @@ logger = logging.getLogger("knowledge.upload")
 
 @router.post("/{client_id}/upload", response_model=KnowledgeFileOut, status_code=201)
 def upload_file(client_id: int, request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    content = file.file.read()
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = file.file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="file too large")
+        chunks.append(chunk)
+    content = b"".join(chunks)
     if not content:
         logger.warning("empty upload: client_id=%s filename=%s content_type=%s", client_id, file.filename, file.content_type)
         raise HTTPException(status_code=400, detail="empty file")
@@ -92,9 +103,13 @@ def upload_file(client_id: int, request: Request, file: UploadFile = File(...), 
         logger.info("duplicate upload: client_id=%s filename=%s sha256=%s", client_id, file.filename, sha256[:12])
         raise HTTPException(status_code=409, detail="duplicate file")
 
-    fname = f"{sha256[:16]}_{file.filename}"
-    fpath = os.path.join(UPLOAD_DIR, fname)
-    with open(fpath, "wb") as f:
+    original_name = os.path.basename(file.filename or "upload")[:255]
+    fname = f"{sha256[:16]}_{original_name}"
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    fpath = (UPLOAD_DIR / fname).resolve()
+    if fpath.parent != UPLOAD_DIR:
+        raise HTTPException(status_code=422, detail="invalid filename")
+    with fpath.open("wb") as f:
         f.write(content)
 
     text_content = content.decode(errors="ignore") if (file.content_type or "").startswith("text/") else ""
@@ -112,7 +127,7 @@ def upload_file(client_id: int, request: Request, file: UploadFile = File(...), 
     kf = KnowledgeFile(
         client_id=client_id,
         source_type="file",
-        filename=file.filename,
+        filename=original_name,
         mime=file.content_type,
         bytes_size=len(content),
         sha256=sha256,

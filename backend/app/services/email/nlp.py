@@ -1,8 +1,46 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
+from typing import List
 import difflib
+
+
+def client_name_pattern(client_name: str) -> re.Pattern[str] | None:
+    """Match a client name while tolerating common separator corruption.
+
+    Historical imports have converted separators such as ``/`` into ``?``. The
+    alphanumeric name components must still match exactly and in order; only the
+    punctuation/whitespace between them is interchangeable.
+    """
+    parts = re.findall(r"\w+", re.sub(r"\s+", " ", client_name.strip()), flags=re.UNICODE)
+    if not parts:
+        return None
+    separator = r"(?:[\s/&+?_.-]+)"
+    expression = separator.join(re.escape(part) for part in parts)
+    return re.compile(rf"(?<!\w){expression}(?!\w)", re.IGNORECASE)
+
+
+def _mention_snippet(body: str, start: int, end: int, *, limit: int = 420) -> str:
+    sentence_breaks = ".!?\n"
+    left = max(body.rfind(mark, 0, start) for mark in sentence_breaks) + 1
+    right_candidates = [body.find(mark, end) for mark in sentence_breaks]
+    right_candidates = [index for index in right_candidates if index >= 0]
+    right = min(right_candidates) + 1 if right_candidates else len(body)
+    snippet = re.sub(r"\s+", " ", body[left:right]).strip()
+    if len(snippet) <= limit:
+        return snippet
+
+    # Preserve whole words and make intentional clipping visible for unusually
+    # long source sentences instead of returning broken word fragments.
+    local_start = max(0, start - left - limit // 2)
+    local_end = min(len(snippet), local_start + limit)
+    if local_start:
+        space = snippet.find(" ", local_start)
+        local_start = space + 1 if space >= 0 else local_start
+    if local_end < len(snippet):
+        space = snippet.rfind(" ", local_start, local_end)
+        local_end = space if space >= 0 else local_end
+    return f"{'…' if local_start else ''}{snippet[local_start:local_end].strip()}{'…' if local_end < len(snippet) else ''}"
 
 
 def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], List[str]]:
@@ -10,14 +48,13 @@ def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], 
     links: List[str] = []
     if not body:
         return mentions, links
-    # Mentions: simple case-insensitive find of client name
-    pattern = re.compile(re.escape(client_name), re.IGNORECASE)
+    pattern = client_name_pattern(client_name)
+    if pattern is None:
+        return mentions, links
     if pattern.search(body):
         # Collect up to 3 snippets around mentions
         for m in pattern.finditer(body):
-            start = max(0, m.start() - 80)
-            end = min(len(body), m.end() + 80)
-            snippet = body[start:end].strip()
+            snippet = _mention_snippet(body, m.start(), m.end())
             mentions.append(snippet)
             if len(mentions) >= 3:
                 break
@@ -89,13 +126,13 @@ def find_best_quote(body: str, client_name: str | None = None) -> str | None:
         if len(candidates) > 100:
             break
 
-    if not candidates:
+    if not candidates or not client_tokens:
         return None
 
     def ctx_has_client(start: int, end: int) -> bool:
         # Check a window around the quote for client name
         window = body[max(0, start - 300): min(len(body), end + 300)].lower()
-        return any(tok in window for tok in client_tokens)
+        return any(re.search(rf"(?<!\w){re.escape(tok)}(?!\w)", window) for tok in client_tokens)
     
     def ctx_has_attribution(start: int, end: int) -> bool:
         # Check if there's an attribution verb near the quote
@@ -118,8 +155,11 @@ def find_best_quote(body: str, client_name: str | None = None) -> str | None:
             sc -= 50
         return sc
 
-    candidates.sort(key=score, reverse=True)
-    best = candidates[0][0].strip()
+    eligible = [entry for entry in candidates if ctx_has_client(entry[1], entry[2]) and ctx_has_attribution(entry[1], entry[2])]
+    if not eligible:
+        return None
+    eligible.sort(key=score, reverse=True)
+    best = eligible[0][0].strip()
     best = re.sub(r"\s+", " ", best)
     return best or None
 
@@ -145,15 +185,22 @@ def classify_sentiment(text: str) -> str:
     return "Neutral"
 
 
-def extract_client_links(links: List[str], client_name: str) -> List[str]:
+def extract_client_links(links: list[str] | list[dict[str, str]], client_name: str) -> List[str]:
     out: List[str] = []
     name_tokens = [t for t in re.split(r"\s+", client_name.strip().lower()) if t and len(t) > 2]
-    for u in links:
+    exact_name = client_name_pattern(client_name)
+    for link in links:
+        if isinstance(link, dict):
+            u = str(link.get("url") or "")
+            anchor_text = str(link.get("text") or "").lower()
+        else:
+            u = str(link)
+            anchor_text = ""
         ul = u.lower()
-        if "linkedin.com/" in ul:
-            out.append(u)
-            continue
-        if any(tok in ul for tok in name_tokens):
+        if (
+            any(tok in ul or re.search(rf"(?<!\w){re.escape(tok)}(?!\w)", anchor_text) for tok in name_tokens)
+            or bool(exact_name and exact_name.search(anchor_text))
+        ):
             out.append(u)
     # dedupe keep order
     seen = set()
@@ -193,5 +240,3 @@ def approximate_substring(haystack: str, needle: str, threshold: float = 0.92) -
     if best[0] >= threshold and best[1]:
         return best[1]
     return None
-
-

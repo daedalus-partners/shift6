@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Boolean, Numeric
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Boolean, Numeric
 from sqlalchemy.orm import declarative_base, relationship
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -89,15 +89,22 @@ class ChatMessage(Base):
 
 class Article(Base):
     __tablename__ = "articles"
+    __table_args__ = (UniqueConstraint("client_name", "url", name="uq_articles_client_url"),)
     id = Column(Integer, primary_key=True)
     client_name = Column(String(128), nullable=False, index=True)
-    url = Column(String(1024), nullable=False, unique=True)
+    url = Column(String(1024), nullable=False)
+    final_url = Column(String(1024))
+    canonical_url = Column(String(1024))
     domain = Column(String(256), index=True)
+    publication = Column(String(128))
     title = Column(String(512))
     author = Column(String(256))
     published_at = Column(String(64))
     description = Column(Text)
     body = Column(Text)
+    source_sha256 = Column(String(64))
+    source_fetched_at = Column(DateTime(timezone=True))
+    source_method = Column(String(32))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -116,6 +123,9 @@ class ArticleSummary(Base):
     sentiment = Column(String(16))  # Positive|Neutral|Negative
     da = Column(String(32))  # Domain Authority (string to avoid strict parsing)
     muv = Column(String(32))  # Monthly Unique Visitors
+    subject = Column(String(256))
+    metrics = Column(JSON)
+    validation_status = Column(String(32), nullable=False, default="source_verified")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -139,10 +149,11 @@ class Quote(Base):
 
 class Hit(Base):
     __tablename__ = "hits"
+    __table_args__ = (UniqueConstraint("quote_id", "url", name="uq_hits_quote_url"),)
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     quote_id = Column(PG_UUID(as_uuid=True), ForeignKey("quotes.id"), index=True)
     client_name = Column(Text)
-    url = Column(String(1024), unique=True)
+    url = Column(String(1024))
     domain = Column(String(256), index=True)
     title = Column(String(512))
     snippet = Column(Text)
@@ -150,6 +161,10 @@ class Hit(Base):
     match_type = Column(String(16))  # exact|partial|paraphrase
     confidence = Column(Numeric)
     markdown = Column(Text)
+    source_verified = Column(Boolean, nullable=False, default=False)
+    source_sha256 = Column(String(64))
+    email_delivery_status = Column(String(16), nullable=False, default="pending")
+    email_attempted_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     emailed_at = Column(DateTime(timezone=True))
 

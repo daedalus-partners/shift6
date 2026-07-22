@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import logging
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
+logger = logging.getLogger(__name__)
 
 
 async def exa_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
@@ -34,8 +36,7 @@ async def exa_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
                 json=payload
             )
             if r.status_code != 200:
-                # Log error for debugging
-                print(f"[Exa] Search failed: {r.status_code} - {r.text[:200]}")
+                logger.warning("Exa search returned status=%s", r.status_code)
                 return []
             data = r.json() or {}
             items = data.get("results") or []
@@ -51,8 +52,8 @@ async def exa_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
                     }
                 )
             return results
-    except Exception as e:
-        print(f"[Exa] Search exception: {e}")
+    except Exception:
+        logger.exception("Exa search failed")
         return []
 
 
@@ -85,4 +86,3 @@ async def fetch_article_text(url: str) -> Optional[str]:
     except Exception:
         pass
     return None
-

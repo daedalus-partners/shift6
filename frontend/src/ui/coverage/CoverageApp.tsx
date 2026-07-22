@@ -43,13 +43,13 @@ async function markAllRead() {
 }
 
 async function importFromSheets() {
-  const r = await fetch(`${API_BASE}/coverage/sheets/import`, { method: 'POST' })
+  const r = await fetch(`${API_BASE}/coverage/sheets/import`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } })
   if (!r.ok) throw new Error('Sheets import failed')
   return await r.json()
 }
 
 async function runScan(limit = 20) {
-  const r = await fetch(`${API_BASE}/coverage/scan?limit=${limit}`, { method: 'POST' })
+  const r = await fetch(`${API_BASE}/coverage/scan?limit=${limit}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } })
   if (!r.ok) throw new Error('Scan failed')
   return await r.json()
 }
@@ -196,7 +196,7 @@ export const CoverageApp: React.FC = () => {
       setError(null)
       const body = parsePaste()
       if (!body.items.length) throw new Error('No items parsed')
-      const r = await fetch(`${API_BASE}/coverage/ingest/paste`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const r = await fetch(`${API_BASE}/coverage/ingest/paste`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) })
       if (!r.ok) throw new Error('Paste import failed')
       const result = await r.json()
       setPasteText('')
@@ -224,7 +224,7 @@ export const CoverageApp: React.FC = () => {
           { client_name: 'Acme', quote_text: 'We raised a $10M Series A to accelerate product development.' },
         ],
       }
-      const r = await fetch(`${API_BASE}/coverage/ingest/paste`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const r = await fetch(`${API_BASE}/coverage/ingest/paste`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify(body) })
       if (!r.ok) throw new Error('Failed to insert samples')
       await r.json()
       await load()
@@ -409,5 +409,4 @@ export const CoverageApp: React.FC = () => {
     </div>
   )
 }
-
 

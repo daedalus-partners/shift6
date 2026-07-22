@@ -6,7 +6,7 @@ import os
 from typing import List, Dict, Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ....db import get_db
@@ -37,12 +37,12 @@ def sheets_sync(db: Session = Depends(get_db)):
 
 
 class PasteItem(BaseModel):
-    client_name: str
-    quote_text: str
+    client_name: str = Field(min_length=1, max_length=128)
+    quote_text: str = Field(min_length=12, max_length=10_000)
 
 
 class PasteIn(BaseModel):
-    items: List[PasteItem]
+    items: List[PasteItem] = Field(min_length=1, max_length=500)
 
 
 @router.post("/paste")
