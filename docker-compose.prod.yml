@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
     # Only expose on localhost, not to the world (Caddy will proxy)
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     environment:
       - APP_ENV=production
       - AUTH_MODE=${AUTH_MODE:-cloudflare_access}
@@ -22,6 +22,6 @@ services:
       target: prod
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:3005:80"
     environment:
       - NODE_ENV=production

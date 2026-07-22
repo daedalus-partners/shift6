@@ -117,7 +117,9 @@ def _sse_from_text(content: str) -> AsyncGenerator[str, None]:
         for w in words:
             chunk.append(w)
             if len(chunk) >= 12:
-                yield f"data: {' '.join(chunk)}\n\n"
+                # Preserve the word boundary when the frontend concatenates
+                # independently delivered SSE chunks.
+                yield f"data: {' '.join(chunk)} \n\n"
                 chunk = []
         if chunk:
             yield f"data: {' '.join(chunk)}\n\n"
