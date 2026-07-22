@@ -84,6 +84,7 @@ def _mention_snippet(body: str, start: int, end: int, *, limit: int = 600) -> st
     next_newline = body.find("\n", end)
     right = next_newline if next_newline >= 0 else len(body)
     snippet = re.sub(r"\s+", " ", body[left:right]).strip()
+    snippet = re.sub(r"\s+([,.;:!?])", r"\1", snippet)
     if len(snippet) <= limit:
         return snippet
 
