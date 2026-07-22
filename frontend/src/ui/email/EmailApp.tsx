@@ -2,6 +2,14 @@ import React, { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
+const splitSubjectLine = (markdown: string, fallbackSubject?: string) => {
+  const match = markdown.match(/^Subject:\s*([^\r\n]+)\r?\n(?:\r?\n)?/i)
+  return {
+    subject: String(fallbackSubject || match?.[1] || 'Coverage Live: Publication'),
+    body: match ? markdown.slice(match[0].length) : markdown,
+  }
+}
+
 export const EmailApp: React.FC = () => {
   const [clientName, setClientName] = useState('')
   const [articleUrl, setArticleUrl] = useState('')
@@ -45,8 +53,9 @@ export const EmailApp: React.FC = () => {
       }
       if (!res.ok) throw new Error(j?.detail || 'Failed to summarize')
       if (j?.markdown) {
-        setResult(String(j.markdown))
-        setSubject(String(j.subject || 'Coverage Live: Publication'))
+        const email = splitSubjectLine(String(j.markdown), j.subject)
+        setResult(email.body)
+        setSubject(email.subject)
       } else if (j?.status === 'accepted') {
         setResult('Request accepted. This is a placeholder; processing will return Markdown soon.')
       } else {
@@ -75,8 +84,9 @@ export const EmailApp: React.FC = () => {
       const r = await fetch(`/api/v1/email/summary/${summaryId}?client_name=${encodeURIComponent(client)}`)
       const j = await r.json()
       if (r.ok && j?.markdown) {
-        setResult(String(j.markdown))
-        setSubject(String(j.subject || 'Coverage Live: Publication'))
+        const email = splitSubjectLine(String(j.markdown), j.subject)
+        setResult(email.body)
+        setSubject(email.subject)
       }
     } catch {}
   }

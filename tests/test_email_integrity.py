@@ -21,7 +21,7 @@ from app.services.email.scraper import ArticleDocument
 from app.services.email import metadata as email_metadata
 from app.services.email import summarizer as email_summarizer
 from app.services.email.nlp import extract_mentions_and_links
-from app.services.email.subject import coverage_subject
+from app.services.email.subject import coverage_subject, markdown_with_subject
 from app.services.email.summarizer import (
     SummaryGenerationError,
     _parse_analysis_content,
@@ -76,6 +76,12 @@ def test_subject_normalizes_domain_style_publication_metadata():
         "A story",
         "businessabc.net",
     ) == "Coverage Live: BusinessABC"
+
+
+def test_markdown_subject_line_is_self_contained_and_not_duplicated():
+    markdown = markdown_with_subject("Outlet — [Story](https://example.com)", "Coverage Live: Example")
+    assert markdown.startswith("Subject: Coverage Live: Example\n\n")
+    assert markdown_with_subject(markdown, "Coverage Live: Example") == markdown
 
 
 def test_source_url_comparison_ignores_only_safe_normalization():
@@ -281,6 +287,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
         db=db,
     )
     assert result["subject"] == "Coverage Live: The Publisher"
+    assert result["markdown"] == "Subject: Coverage Live: The Publisher\n\nVerified markdown"
     assert result["validation_status"] == "source_verified"
     article = next(value for value in db.added if value.__class__.__name__ == "Article")
     assert article.source_sha256 == "a" * 64
