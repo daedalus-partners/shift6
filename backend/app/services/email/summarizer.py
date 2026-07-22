@@ -177,14 +177,38 @@ def _third_person_outlet_description(value: Any, publication: str) -> str:
     return text
 
 
+def _display_title(value: Any, publication: str) -> str:
+    """Remove a redundant outlet suffix from the displayed article headline."""
+    title = _clean_text(value, limit=512) or "Untitled coverage"
+    if not publication:
+        return title
+    suffix = re.compile(
+        rf"\s*(?:[-–—|:]\s*){re.escape(publication)}\s*$",
+        flags=re.IGNORECASE,
+    )
+    return suffix.sub("", title).strip() or title
+
+
+def _has_client_value(value: str) -> bool:
+    normalized = _clean_text(value).lower()
+    if not normalized:
+        return False
+    return not (
+        normalized.startswith("no ")
+        or "insufficient" in normalized
+        or "not available" in normalized
+        or "unavailable" in normalized
+    )
+
+
 def render_verified_email(data: dict, analysis: dict) -> str:
     verified = _validate_analysis(analysis)
-    title = _escape_markdown(data.get("title") or "Untitled coverage")
     publication_name = _clean_text(
         data.get("publication") or data.get("domain") or "Publication",
         limit=128,
     )
     publication = _escape_markdown(publication_name)
+    title = _escape_markdown(_display_title(data.get("title"), publication_name))
     url = _safe_markdown_url(data.get("url"))
 
     description = _escape_markdown(
@@ -199,38 +223,41 @@ def render_verified_email(data: dict, analysis: dict) -> str:
         for link in data.get("client_links") or []
         if str(link).startswith(("http://", "https://"))
     ]
-    mentions = [_escape_markdown(value) for value in data.get("mentions") or [] if value]
-    quote = _escape_markdown(data.get("best_quote")) if data.get("best_quote") else "No direct client quote found."
-    quote_line = f"“{quote}”" if data.get("best_quote") else quote
-
-    link_lines = "\n".join(f"- [{_escape_markdown(link)}]({link})" for link in client_links)
-    if not link_lines:
-        client_name = _escape_markdown(data.get("client_name") or "the client")
-        link_lines = f"- No verified direct link to {client_name} was found in the article."
-    mention_lines = (
-        f"- Exact client-name mentions found: {len(mentions)}."
-        if mentions
-        else "- No exact client-name mention found."
-    )
-
-    return (
+    sections = [
         f"{publication} — [{title}]({url})\n\n"
         "## Outlet Snapshot\n\n"
         f"- {description}\n"
         f"{authority_line}\n"
-        f"{audience_line}\n\n"
-        "## Verified Links & Mentions\n\n"
-        f"{link_lines}\n\n"
-        f"{mention_lines}\n\n"
-        "## Message Pull-Through\n\n"
-        f"- {_escape_markdown(verified['message_pull_through'])}\n\n"
-        "## Quote Highlight\n\n"
-        f"- {quote_line}\n\n"
-        "## Strategic Value\n\n"
-        f"- {_escape_markdown(verified['strategic_value'])}\n\n"
-        "## Performance / Reach\n\n"
-        f"- {_escape_markdown(verified['performance_reach'])}\n"
-    )
+        f"{audience_line}"
+    ]
+
+    if client_links:
+        link_lines = "\n".join(f"- [{_escape_markdown(link)}]({link})" for link in client_links)
+        sections.append(f"## Client Links\n\n{link_lines}")
+
+    if _has_client_value(verified["message_pull_through"]):
+        sections.append(
+            "## Coverage Highlight\n\n"
+            f"- {_escape_markdown(verified['message_pull_through'])}"
+        )
+
+    if data.get("best_quote"):
+        quote = _escape_markdown(data.get("best_quote"))
+        sections.append(f"## Quote Highlight\n\n- “{quote}”")
+
+    if _has_client_value(verified["strategic_value"]):
+        sections.append(
+            "## Strategic Value\n\n"
+            f"- {_escape_markdown(verified['strategic_value'])}"
+        )
+
+    if _has_client_value(verified["performance_reach"]):
+        sections.append(
+            "## Performance / Reach\n\n"
+            f"- {_escape_markdown(verified['performance_reach'])}"
+        )
+
+    return "\n\n".join(sections) + "\n"
 
 
 def _evidence_only_analysis(data: dict) -> dict[str, str]:
@@ -243,8 +270,7 @@ def _evidence_only_analysis(data: dict) -> dict[str, str]:
     if mentions:
         pull_through = mentions[0]
         strategic_value = (
-            f"This placement introduces {client_name} to {publication}'s audience in the verified context above. "
-            "Audience response and broader strategic impact have not been measured."
+            f"This placement introduces {client_name} to {publication}'s audience in the context above."
         )
     else:
         pull_through = "No exact client-name mention was found in the verified article text."

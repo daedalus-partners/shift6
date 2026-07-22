@@ -166,7 +166,7 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
             "url": "https://publisher.example/story",
             "domain": "publisher.example",
             "publication": "The Publisher",
-            "title": "Acme launches",
+            "title": "Acme launches - The Publisher",
             "outlet_description": (
                 "We are a publication for business leaders. Providing industry context, "
                 "we regularly cover technology and finance for our readers."
@@ -200,6 +200,7 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
         },
     )
     assert "[Acme launches](https://publisher.example/story)" in markdown
+    assert "Acme launches - The Publisher" not in markdown
     assert markdown.startswith("The Publisher —")
     assert (
         "The Publisher is a publication for business leaders. Providing industry context, "
@@ -213,6 +214,10 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
     assert "Confidence:" not in markdown
     assert "Observed:" not in markdown
     assert '“We are ready to launch.”' in markdown
+    assert "## Client Links" in markdown
+    assert "## Coverage Highlight" in markdown
+    assert "## Message Pull-Through" not in markdown
+    assert "## Verified Links & Mentions" not in markdown
 
 
 @pytest.mark.asyncio
@@ -320,8 +325,37 @@ async def test_summary_uses_exact_evidence_instead_of_model_paraphrase():
     )
     assert source_language in markdown
     assert "Verified article language:" not in markdown
-    assert "No verified article-level reach or performance data is available" in markdown
+    assert "No verified article-level reach or performance data is available" not in markdown
+    assert "## Performance / Reach" not in markdown
+    assert "## Quote Highlight" not in markdown
+    assert "## Coverage Highlight" in markdown
     assert "Acme reduces costs" not in markdown
+
+
+def test_renderer_hides_empty_client_sections():
+    markdown = render_verified_email(
+        {
+            "client_name": "Acme",
+            "url": "https://publisher.example/story",
+            "publication": "Publisher",
+            "title": "Acme coverage | Publisher",
+            "client_links": [],
+            "best_quote": None,
+        },
+        {
+            "message_pull_through": "No exact client-name mention was found.",
+            "strategic_value": "The supplied evidence is insufficient to assess strategic value.",
+            "performance_reach": "No verified article-level reach or performance data is available.",
+        },
+    )
+
+    assert "[Acme coverage](https://publisher.example/story)" in markdown
+    assert "## Client Links" not in markdown
+    assert "## Coverage Highlight" not in markdown
+    assert "## Quote Highlight" not in markdown
+    assert "## Strategic Value" not in markdown
+    assert "## Performance / Reach" not in markdown
+    assert "No verified" not in markdown
 
 
 @pytest.mark.asyncio

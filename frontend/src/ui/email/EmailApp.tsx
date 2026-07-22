@@ -10,12 +10,40 @@ const splitSubjectLine = (markdown: string, fallbackSubject?: string) => {
   }
 }
 
+const fallbackCopy = (text: string) => {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  textarea.setSelectionRange(0, text.length)
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  return copied
+}
+
+const copyText = async (text: string) => {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
+    await Promise.race([
+      navigator.clipboard.writeText(text),
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error('Clipboard timed out')), 1500)),
+    ])
+    return
+  } catch {
+    if (!fallbackCopy(text)) throw new Error('Copy failed')
+  }
+}
+
 export const EmailApp: React.FC = () => {
   const [clientName, setClientName] = useState('')
   const [articleUrl, setArticleUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<string>('')
   const [subject, setSubject] = useState<string>('')
+  const [copyStatus, setCopyStatus] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [history, setHistory] = useState<Array<{id:number; url:string; title?:string; domain?:string; created_at?:string; summary_id?:number|null}>>([])
   const [search, setSearch] = useState('')
@@ -37,7 +65,7 @@ export const EmailApp: React.FC = () => {
   }, [clientName])
 
   const onSubmit = async () => {
-    setError(''); setResult(''); setSubject('')
+    setError(''); setResult(''); setSubject(''); setCopyStatus('')
     if (!clientName.trim() || !articleUrl.trim()) { setError('Please enter client and URL'); return }
     setLoading(true)
     try {
@@ -70,10 +98,15 @@ export const EmailApp: React.FC = () => {
   }
 
   const onCopy = async () => {
+    const prefix = subject ? `Subject: ${subject}\n\n` : ''
+    setCopyStatus('Copying…')
     try {
-      const prefix = subject ? `Subject: ${subject}\n\n` : ''
-      await navigator.clipboard.writeText(`${prefix}${result}`)
-    } catch {}
+      await copyText(`${prefix}${result}`)
+      setCopyStatus('Copied')
+      window.setTimeout(() => setCopyStatus(''), 2500)
+    } catch {
+      setCopyStatus('Copy failed — select the email and copy manually')
+    }
   }
 
   const openSummary = async (summaryId?: number|null) => {
@@ -118,7 +151,10 @@ export const EmailApp: React.FC = () => {
         <div style={{ marginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0 }}>Generated Email</h3>
-            <button onClick={onCopy} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy subject + email</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {copyStatus && <span role="status" aria-live="polite" style={{ fontSize: 13 }}>{copyStatus}</span>}
+              <button onClick={onCopy} disabled={copyStatus === 'Copying…'} style={{ border: '2px solid #000', background: '#fff', padding: '4px 8px' }}>Copy subject + email</button>
+            </div>
           </div>
           <div style={{ border: '1px solid #9e9e9e', padding: 12 }}>
             <div style={{ marginBottom: 12 }}><strong>Subject:</strong> {subject}</div>
