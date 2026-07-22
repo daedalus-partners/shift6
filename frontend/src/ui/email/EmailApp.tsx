@@ -15,8 +15,16 @@ const fallbackCopy = (text: string) => {
   textarea.value = text
   textarea.setAttribute('readonly', '')
   textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '2px'
+  textarea.style.height = '2px'
+  textarea.style.padding = '0'
+  textarea.style.border = '0'
+  textarea.style.outline = '0'
+  textarea.style.background = 'transparent'
   document.body.appendChild(textarea)
+  textarea.focus()
   textarea.select()
   textarea.setSelectionRange(0, text.length)
   const copied = document.execCommand('copy')
