@@ -167,7 +167,10 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
             "domain": "publisher.example",
             "publication": "The Publisher",
             "title": "Acme launches",
-            "outlet_description": "A publication.",
+            "outlet_description": (
+                "We are a publication for business leaders. Providing industry context, "
+                "we regularly cover technology and finance for our readers."
+            ),
             "metrics": {
                 "site_authority": {
                     "label": "Site authority estimate",
@@ -198,6 +201,11 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
     )
     assert "[Acme launches](https://publisher.example/story)" in markdown
     assert markdown.startswith("The Publisher —")
+    assert (
+        "The Publisher is a publication for business leaders. Providing industry context, "
+        "it regularly covers technology and finance for its readers."
+    ) in markdown
+    assert "We are a publication" not in markdown
     assert "Site authority estimate: **72/100**" in markdown
     assert "Monthly audience estimate: **Unavailable**" in markdown
     assert "Source:" not in markdown
@@ -310,7 +318,8 @@ async def test_summary_uses_exact_evidence_instead_of_model_paraphrase():
             "client_links": ["https://acme.example/report"],
         }
     )
-    assert f"Verified article language: {source_language}" in markdown
+    assert source_language in markdown
+    assert "Verified article language:" not in markdown
     assert "No verified article-level reach or performance data is available" in markdown
     assert "Acme reduces costs" not in markdown
 

@@ -135,13 +135,61 @@ def _metric_line(metric: dict | None, fallback_label: str) -> str:
     return f"- {label}: **{value}**"
 
 
+def _third_person_outlet_description(value: Any, publication: str) -> str:
+    """Convert publisher-authored first-person About copy into client-facing third person."""
+    text = _clean_text(value, limit=2_000)
+    if not text:
+        return "No publication description available."
+
+    def conjugate(verb: str) -> str:
+        lower = verb.lower()
+        irregular = {"are": "is", "have": "has", "do": "does"}
+        unchanged = {"can", "could", "will", "would", "should", "may", "might", "must"}
+        if lower in irregular:
+            return irregular[lower]
+        if lower in unchanged:
+            return lower
+        if re.search(r"(?:s|x|z|ch|sh|o)$", lower):
+            return f"{lower}es"
+        if lower.endswith("y") and len(lower) > 1 and lower[-2] not in "aeiou":
+            return f"{lower[:-1]}ies"
+        return f"{lower}s"
+
+    first_subject = True
+
+    def replace_we_verb(match: re.Match) -> str:
+        nonlocal first_subject
+        subject = publication if first_subject else "it"
+        first_subject = False
+        adverbs = match.group(1) or ""
+        return f"{subject} {adverbs}{conjugate(match.group(2))}"
+
+    text = re.sub(
+        r"\bwe\s+((?:[A-Za-z]+ly\s+)*)?([A-Za-z]+)\b",
+        replace_we_verb,
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\bour\b", "its", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bours\b", "its", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bus\b", "the publication", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bwe\b", "it", text, flags=re.IGNORECASE)
+    return text
+
+
 def render_verified_email(data: dict, analysis: dict) -> str:
     verified = _validate_analysis(analysis)
     title = _escape_markdown(data.get("title") or "Untitled coverage")
-    publication = _escape_markdown(data.get("publication") or data.get("domain") or "Publication")
+    publication_name = _clean_text(
+        data.get("publication") or data.get("domain") or "Publication",
+        limit=128,
+    )
+    publication = _escape_markdown(publication_name)
     url = _safe_markdown_url(data.get("url"))
 
-    description = _escape_markdown(data.get("outlet_description") or "No publication description available.")
+    description = _escape_markdown(
+        _third_person_outlet_description(data.get("outlet_description"), publication_name)
+    )
     metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
     authority_line = _metric_line(metrics.get("site_authority"), "Site authority estimate")
     audience_line = _metric_line(metrics.get("monthly_audience"), "Monthly audience estimate")
@@ -193,7 +241,7 @@ def _evidence_only_analysis(data: dict) -> dict[str, str]:
     )
     mentions = [_clean_text(item, limit=1_200) for item in data.get("mentions") or [] if item]
     if mentions:
-        pull_through = f"Verified article language: {mentions[0]}"
+        pull_through = mentions[0]
         strategic_value = (
             f"This placement introduces {client_name} to {publication}'s audience in the verified context above. "
             "Audience response and broader strategic impact have not been measured."
