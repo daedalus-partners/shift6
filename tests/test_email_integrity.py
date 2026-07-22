@@ -79,6 +79,14 @@ def test_client_mention_preserves_decimal_funding_context():
     assert "£20.75 million" in mentions[0]
 
 
+def test_client_mention_removes_scraper_spacing_before_punctuation():
+    mentions, _ = extract_mentions_and_links(
+        "Acme",
+        "Acme won the 2026 Industry Award , recognizing its verified progress .",
+    )
+    assert mentions == ["Acme won the 2026 Industry Award, recognizing its verified progress."]
+
+
 def test_client_mention_prefers_article_prose_over_navigation():
     body = (
         "News News View All Airlines Latest Features Read More Hawaiian Airlines fleet news Read More\n"
