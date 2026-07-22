@@ -62,6 +62,7 @@ async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
             "client_name": client_name,
             "url": requested_url,
             "domain": document.domain,
+            "publication": document.publication,
             "title": document.title,
             # Article metadata describes this story, not necessarily the outlet.
             # Keep the publication snapshot explicit when no verified About page exists.

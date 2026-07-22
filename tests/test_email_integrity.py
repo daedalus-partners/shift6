@@ -19,7 +19,6 @@ from app.services.email.http_safety import (
 from app.services.email.scraper import parse_article_html
 from app.services.email.scraper import ArticleDocument
 from app.services.email import metadata as email_metadata
-from app.services.email import summarizer as email_summarizer
 from app.services.email.nlp import extract_mentions_and_links
 from app.services.email.subject import coverage_subject, markdown_with_subject
 from app.services.email.summarizer import (
@@ -69,6 +68,17 @@ def test_client_mentions_still_require_exact_name_components():
     assert mentions == []
 
 
+def test_client_mention_preserves_decimal_funding_context():
+    source = (
+        "The private sector is also keen to participate. Last autumn, International Airlines Group "
+        "was one of the investors in a £20.75 million funding round for OXCCU, an Oxford University "
+        "spin-out, which the company says can reduce costs."
+    )
+    mentions, _ = extract_mentions_and_links("OXCCU", source)
+    assert mentions == [source]
+    assert "£20.75 million" in mentions[0]
+
+
 def test_subject_normalizes_domain_style_publication_metadata():
     assert coverage_subject(
         "https://businessabc.net/story",
@@ -106,6 +116,7 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
             "client_name": "Acme",
             "url": "https://publisher.example/story",
             "domain": "publisher.example",
+            "publication": "The Publisher",
             "title": "Acme launches",
             "outlet_description": "A publication.",
             "metrics": {
@@ -137,6 +148,7 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
         },
     )
     assert "[Acme launches](https://publisher.example/story)" in markdown
+    assert markdown.startswith("The Publisher —")
     assert "Site authority estimate: **72/100**" in markdown
     assert "Best-effort estimate; Source: Open PageRank" in markdown
     assert "not Moz Domain Authority" in markdown
@@ -160,23 +172,25 @@ def test_analysis_parser_accepts_fenced_and_prefixed_json():
 
 
 @pytest.mark.asyncio
-async def test_summary_uses_conservative_fallback_when_model_fails(monkeypatch):
-    async def fail_analysis(_data):
-        raise SummaryGenerationError("bad envelope")
-
-    monkeypatch.setattr(email_summarizer, "_generate_analysis", fail_analysis)
+async def test_summary_uses_exact_evidence_instead_of_model_paraphrase():
+    source_language = (
+        "International Airlines Group was one of the investors in a £20.75 million funding round "
+        "for Acme, which the company says can reduce costs."
+    )
     markdown = await summarize_to_markdown(
         {
             "client_name": "Acme",
             "url": "https://publisher.example/story",
             "domain": "publisher.example",
+            "publication": "The Publisher",
             "title": "Acme coverage",
-            "mentions": ["Acme is covered."],
+            "mentions": [source_language],
             "client_links": ["https://acme.example/report"],
         }
     )
-    assert "verified client-name coverage and a direct client link" in markdown
-    assert "No verified reach or performance data is available" in markdown
+    assert f"Verified article language: {source_language}" in markdown
+    assert "No verified article-level reach or performance data is available" in markdown
+    assert "Acme reduces costs" not in markdown
 
 
 @pytest.mark.asyncio
@@ -201,7 +215,7 @@ async def test_about_description_skips_redirected_candidate(monkeypatch):
 
     monkeypatch.setattr(email_metadata, "safe_get_text", fake_get)
     description = await email_metadata.try_fetch_about_description("publisher.example")
-    assert description == "The real publication description"
+    assert description == "The real publication description."
     assert requested == [
         "https://publisher.example/about",
         "https://publisher.example/about-us",
@@ -239,6 +253,7 @@ async def test_summarize_route_persists_verified_document_contract(monkeypatch):
 
     async def fake_summary(data):
         assert data["url"] == document.requested_url
+        assert data["publication"] == "The Publisher"
         assert data["client_links"] == ["https://publisher.example/acme"]
         return "Verified markdown"
 
