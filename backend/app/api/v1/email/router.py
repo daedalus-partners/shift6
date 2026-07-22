@@ -20,7 +20,7 @@ from ....services.email.nlp import (
     extract_mentions_and_links,
     find_best_quote,
 )
-from ....services.email.subject import coverage_subject, markdown_with_subject
+from ....services.email.subject import coverage_subject, markdown_with_subject, markdown_without_subject
 from ....services.email.summarizer import SummaryGenerationError, summarize_to_markdown
 
 
@@ -134,6 +134,9 @@ async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
             # Keep the email self-contained for browser tabs running an older
             # frontend bundle that does not render the separate subject field.
             "markdown": markdown_with_subject(markdown, subject),
+            # Current clients render a dedicated subject row and should not
+            # have to parse compatibility content out of the body.
+            "body_markdown": markdown_without_subject(markdown),
             "article_id": article.id,
             "summary_id": summary.id,
             "validation_status": summary.validation_status,
@@ -209,6 +212,7 @@ def get_summary(
     return {
         "subject": subject,
         "markdown": markdown_with_subject(summary.markdown, subject),
+        "body_markdown": markdown_without_subject(summary.markdown),
         "article_id": summary.article_id,
         "summary_id": summary.id,
         "validation_status": summary.validation_status,

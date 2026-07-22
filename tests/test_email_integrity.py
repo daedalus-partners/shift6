@@ -20,7 +20,7 @@ from app.services.email.scraper import parse_article_html
 from app.services.email.scraper import ArticleDocument
 from app.services.email import metadata as email_metadata
 from app.services.email.nlp import extract_mentions_and_links
-from app.services.email.subject import coverage_subject, markdown_with_subject
+from app.services.email.subject import coverage_subject, markdown_with_subject, markdown_without_subject
 from app.services.email.summarizer import (
     SummaryGenerationError,
     _parse_analysis_content,
@@ -92,6 +92,7 @@ def test_markdown_subject_line_is_self_contained_and_not_duplicated():
     markdown = markdown_with_subject("Outlet — [Story](https://example.com)", "Coverage Live: Example")
     assert markdown.startswith("Subject: Coverage Live: Example\n\n")
     assert markdown_with_subject(markdown, "Coverage Live: Example") == markdown
+    assert markdown_without_subject(markdown) == "Outlet — [Story](https://example.com)"
 
 
 def test_source_url_comparison_ignores_only_safe_normalization():
