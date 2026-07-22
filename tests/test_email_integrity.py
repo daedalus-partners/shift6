@@ -25,6 +25,7 @@ from app.services.email.subject import coverage_subject, markdown_with_subject, 
 from app.services.email.summarizer import (
     SummaryGenerationError,
     _parse_analysis_content,
+    _publication_performance_reach,
     _validate_grounded_analysis,
     render_verified_email,
     summarize_to_markdown,
@@ -348,6 +349,25 @@ def test_grounded_analysis_rejects_invented_audience_and_metric_claims():
     changed_unit = dict(base, performance_reach="The outlet reaches ~136,000 monthly visitors.")
     with pytest.raises(SummaryGenerationError, match="visits into visitors"):
         _validate_grounded_analysis(changed_unit, dossier)
+
+
+def test_performance_reach_attributes_metrics_to_publication_not_placement():
+    result = _publication_performance_reach(
+        {
+            "publication": "Business Traveller",
+            "metrics": {
+                "site_authority": {"label": "Moz Domain Authority", "value": "76/100"},
+                "monthly_audience": {"label": "Estimated monthly visits", "value": "~136,000"},
+            },
+        }
+    )
+    assert result == (
+        "Business Traveller receives an estimated 136,000 monthly visits and has a Moz Domain Authority "
+        "of 76/100. These publication-level metrics provide directional context on outlet scale and "
+        "digital authority; article-level views are not available."
+    )
+    assert "placement reaches" not in result
+    assert "estimated ~" not in result
 
 
 @pytest.mark.asyncio
