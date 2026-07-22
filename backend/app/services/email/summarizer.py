@@ -132,20 +132,7 @@ def _metric_line(metric: dict | None, fallback_label: str) -> str:
     item = metric or {}
     label = _escape_markdown(item.get("label") or fallback_label)
     value = _escape_markdown(item.get("value") or "Unavailable")
-    source = _escape_markdown(item.get("source") or "Unavailable")
-    method = _escape_markdown(item.get("method") or "No method available")
-    confidence = _escape_markdown(item.get("confidence") or "low")
-    observed = _escape_markdown(item.get("observed_at") or "not recorded")
-    if value.lower() == "unavailable":
-        return (
-            f"- {label}: **Unavailable** — Source: {source}; "
-            f"Method: {method}; Observed: {observed}"
-        )
-    estimate_label = "Best-effort estimate" if item.get("estimated", True) else "Reported value"
-    return (
-        f"- {label}: **{value}** — {estimate_label}; Source: {source}; "
-        f"Method: {method}; Confidence: {confidence}; Observed: {observed}"
-    )
+    return f"- {label}: **{value}**"
 
 
 def render_verified_email(data: dict, analysis: dict) -> str:

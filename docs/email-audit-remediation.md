@@ -2,7 +2,7 @@
 
 ## Product contract
 
-Given a client name and one earned-media URL, Shift6 creates a client-ready coverage email tied to that exact page. It fails clearly when the source or provider cannot be verified. Directional publication metrics are shown only with visible source, method, observation date, confidence, and best-effort labeling.
+Given a client name and one earned-media URL, Shift6 creates a client-ready coverage email tied to that exact page. It fails clearly when the source or provider cannot be verified. Publication metrics remain source-attributed in the structured API data, while the client-facing email shows only the concise metric label and value.
 
 Every generated email has a deterministic subject:
 
@@ -18,7 +18,7 @@ Every generated email has a deterministic subject:
 - Remote publisher text is sent to the model as untrusted JSON evidence. The model supplies only three subjective analysis fields. Headline, URL, links, quote, metrics, and labels are rendered deterministically from verified data.
 - Provider/source failure returns an error. There is no successful-looking offline placeholder.
 - Moz v2 URL Metrics supplies the actual `Moz Domain Authority`; results are cached for 30 days per publication to conserve API rows. Open PageRank remains a clearly labeled directional fallback.
-- Monthly audience always contains a number. Until a measured traffic provider is configured, it is visibly labeled as a low-confidence best-effort estimate with the deterministic authority-based method and observation date shown in the email.
+- Monthly audience always contains a number. Until a measured traffic provider is configured, the email's `Monthly audience estimate` label identifies it as an estimate; full provenance remains available in the structured API data.
 - Article identity is unique per client and URL. History, search, and summary reads require the client name and summaries are ordered from the summary record.
 - Coverage search results are re-fetched before persistence. Exact quote and client-name boundaries are verified against the fetched body.
 - Coverage hits are committed before an atomic email-delivery claim. SMTP requires verified TLS, and only source-verified hits can be sent.

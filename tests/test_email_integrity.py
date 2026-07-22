@@ -199,9 +199,11 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
     assert "[Acme launches](https://publisher.example/story)" in markdown
     assert markdown.startswith("The Publisher —")
     assert "Site authority estimate: **72/100**" in markdown
-    assert "Best-effort estimate; Source: Open PageRank" in markdown
-    assert "not Moz Domain Authority" in markdown
     assert "Monthly audience estimate: **Unavailable**" in markdown
+    assert "Source:" not in markdown
+    assert "Method:" not in markdown
+    assert "Confidence:" not in markdown
+    assert "Observed:" not in markdown
     assert '“We are ready to launch.”' in markdown
 
 
