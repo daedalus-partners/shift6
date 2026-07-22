@@ -33,6 +33,9 @@ const fallbackCopy = (text: string) => {
 }
 
 const copyText = async (text: string) => {
+  // Legacy copying must run synchronously inside the click's transient user
+  // activation window. Keep the modern API attempt for richer browsers.
+  const fallbackCopied = fallbackCopy(text)
   try {
     if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable')
     await Promise.race([
@@ -41,7 +44,7 @@ const copyText = async (text: string) => {
     ])
     return
   } catch {
-    if (!fallbackCopy(text)) throw new Error('Copy failed')
+    if (!fallbackCopied) throw new Error('Copy failed')
   }
 }
 
