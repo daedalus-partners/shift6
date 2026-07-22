@@ -36,6 +36,15 @@ SOCIAL_SHARE_PATH_MARKERS = (
     "/submit",
     "/intent/",
 )
+CLIENT_SOCIAL_HOSTS = {
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "threads.net",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+}
 TITLE_STOPWORDS = {
     "about",
     "after",
@@ -287,8 +296,13 @@ def extract_client_links(
             continue
         if any(marker in path for marker in SOCIAL_SHARE_PATH_MARKERS):
             continue
-        searchable_url = f"{host}{path}".lower()
-        url_matches = bool(name_tokens) and all(token in searchable_url for token in name_tokens)
+        hostname_matches = bool(name_tokens) and all(token in host for token in name_tokens)
+        social_profile_matches = (
+            host in CLIENT_SOCIAL_HOSTS
+            and bool(name_tokens)
+            and all(token in path for token in name_tokens)
+        )
+        url_matches = hostname_matches or social_profile_matches
         if url_matches:
             out.append(u)
     # dedupe keep order
