@@ -19,11 +19,13 @@ from app.services.email.http_safety import (
 from app.services.email.scraper import parse_article_html
 from app.services.email.scraper import ArticleDocument
 from app.services.email import metadata as email_metadata
+from app.services.email import summarizer as email_summarizer
 from app.services.email.nlp import extract_client_links, extract_mentions_and_links
 from app.services.email.subject import coverage_subject, markdown_with_subject, markdown_without_subject
 from app.services.email.summarizer import (
     SummaryGenerationError,
     _parse_analysis_content,
+    _validate_grounded_analysis,
     render_verified_email,
     summarize_to_markdown,
 )
@@ -214,9 +216,9 @@ def test_verified_renderer_labels_metrics_and_preserves_exact_source_values():
     assert "Confidence:" not in markdown
     assert "Observed:" not in markdown
     assert '“We are ready to launch.”' in markdown
-    assert "## Client Links" in markdown
-    assert "## Coverage Highlight" in markdown
-    assert "## Message Pull-Through" not in markdown
+    assert "## Coverage Details" in markdown
+    assert "Direct client link:" in markdown
+    assert "## Message Pull-Through" in markdown
     assert "## Verified Links & Mentions" not in markdown
 
 
@@ -260,7 +262,11 @@ async def test_moz_metrics_include_real_da_and_labeled_numeric_audience(monkeypa
     async def fake_moz(_domain):
         return 76
 
+    async def fake_semrush(_domain):
+        return 135_965, "2026-06-01"
+
     monkeypatch.setattr(email_metadata, "lookup_domain_authority_via_moz", fake_moz)
+    monkeypatch.setattr(email_metadata, "lookup_monthly_visits_via_semrush", fake_semrush)
     metrics = await email_metadata.lookup_da_muv("www.businesstraveller.com")
 
     assert metrics["site_authority"] == {
@@ -272,10 +278,21 @@ async def test_moz_metrics_include_real_da_and_labeled_numeric_audience(monkeypa
         "estimated": False,
         "observed_at": metrics["site_authority"]["observed_at"],
     }
-    assert metrics["monthly_audience"]["value"] == "~3,000,000"
+    assert metrics["monthly_audience"]["label"] == "Estimated monthly visits"
+    assert metrics["monthly_audience"]["value"] == "~136,000"
     assert len(metrics["monthly_audience"]["value"]) <= 32
+    assert metrics["monthly_audience"]["source"] == "Semrush website traffic overview"
+    assert metrics["monthly_audience"]["observed_at"] == "2026-06-01"
     assert metrics["monthly_audience"]["estimated"] is True
-    assert "not measured traffic" in metrics["monthly_audience"]["method"]
+
+
+def test_semrush_parser_extracts_current_visits_and_reporting_month():
+    page = (
+        '&quot;trafficStats&quot;:[0,{&quot;authorityScore&quot;:[0,{&quot;value&quot;:[0,47]}],'
+        '&quot;visits&quot;:[0,{&quot;value&quot;:[0,135965],&quot;valueDiffPercent&quot;:[0,null]}]}],'
+        '&quot;trafficByCountry&quot;:[0,{&quot;displayDate&quot;:[0,&quot;2026-06-01&quot;]}]'
+    )
+    assert email_metadata.parse_semrush_monthly_visits(page) == (135_965, "2026-06-01")
 
 
 @pytest.mark.asyncio
@@ -283,12 +300,16 @@ async def test_metrics_still_supply_a_numeric_audience_without_authority(monkeyp
     async def no_authority(_domain):
         return None
 
+    async def no_traffic(_domain):
+        return None
+
     monkeypatch.setattr(email_metadata, "lookup_domain_authority_via_moz", no_authority)
     monkeypatch.setattr(email_metadata, "lookup_da_via_openpagerank", no_authority)
+    monkeypatch.setattr(email_metadata, "lookup_monthly_visits_via_semrush", no_traffic)
     metrics = await email_metadata.lookup_da_muv("publisher.example")
 
     assert metrics["monthly_audience"]["value"] == "~100,000"
-    assert metrics["monthly_audience"]["source"] == "Internal best-effort fallback"
+    assert metrics["monthly_audience"]["source"] == "Internal authority-based fallback"
 
 
 def test_renderer_rejects_analysis_with_unverified_links():
@@ -306,12 +327,39 @@ def test_analysis_parser_accepts_fenced_and_prefixed_json():
     assert parsed["strategic_value"] == "s"
 
 
+def test_grounded_analysis_rejects_invented_audience_and_metric_claims():
+    dossier = {
+        "publication_metrics": {
+            "site_authority": {"label": "Moz Domain Authority", "value": "76/100"},
+            "monthly_audience": {"label": "Estimated monthly visits", "value": "~136,000"},
+        }
+    }
+    base = {
+        "message_pull_through": "The article reports the client's qualified claim.",
+        "strategic_value": "The coverage connects the client to the article's central subject.",
+        "performance_reach": "The outlet has estimated monthly visits of ~136,000.",
+    }
+    assert _validate_grounded_analysis(base, dossier) == base
+
+    invented_audience = dict(base, strategic_value="The coverage reaches business decision-makers.")
+    with pytest.raises(SummaryGenerationError, match="unsupported positioning"):
+        _validate_grounded_analysis(invented_audience, dossier)
+
+    changed_unit = dict(base, performance_reach="The outlet reaches ~136,000 monthly visitors.")
+    with pytest.raises(SummaryGenerationError, match="visits into visitors"):
+        _validate_grounded_analysis(changed_unit, dossier)
+
+
 @pytest.mark.asyncio
-async def test_summary_uses_exact_evidence_instead_of_model_paraphrase():
+async def test_summary_fallback_uses_exact_evidence_instead_of_model_paraphrase(monkeypatch):
     source_language = (
         "International Airlines Group was one of the investors in a £20.75 million funding round "
         "for Acme, which the company says can reduce costs."
     )
+    async def model_unavailable(_data):
+        raise SummaryGenerationError("test fallback")
+
+    monkeypatch.setattr(email_summarizer, "_generate_analysis", model_unavailable)
     markdown = await summarize_to_markdown(
         {
             "client_name": "Acme",
@@ -326,13 +374,36 @@ async def test_summary_uses_exact_evidence_instead_of_model_paraphrase():
     assert source_language in markdown
     assert "Verified article language:" not in markdown
     assert "No verified article-level reach or performance data is available" not in markdown
-    assert "## Performance / Reach" not in markdown
-    assert "## Quote Highlight" not in markdown
-    assert "## Coverage Highlight" in markdown
+    assert "## Performance / Reach" in markdown
+    assert "## Quote Highlight" in markdown
+    assert "## Message Pull-Through" in markdown
     assert "Acme reduces costs" not in markdown
 
 
-def test_renderer_hides_empty_client_sections():
+@pytest.mark.asyncio
+async def test_summary_uses_model_for_client_value_sections(monkeypatch):
+    async def polished_analysis(_data):
+        return {
+            "message_pull_through": "The coverage positions Acme's qualified cost claim within the launch story.",
+            "strategic_value": "The placement aligns Acme with a timely industry discussion for business leaders.",
+            "performance_reach": "The outlet's estimated reach provides focused exposure among relevant readers.",
+        }
+
+    monkeypatch.setattr(email_summarizer, "_generate_analysis", polished_analysis)
+    markdown = await summarize_to_markdown(
+        {
+            "client_name": "Acme",
+            "url": "https://publisher.example/story",
+            "publication": "Publisher",
+            "title": "Acme launch coverage",
+        }
+    )
+    assert "qualified cost claim" in markdown
+    assert "timely industry discussion" in markdown
+    assert "focused exposure" in markdown
+
+
+def test_renderer_preserves_full_client_sections_when_details_are_absent():
     markdown = render_verified_email(
         {
             "client_name": "Acme",
@@ -350,12 +421,12 @@ def test_renderer_hides_empty_client_sections():
     )
 
     assert "[Acme coverage](https://publisher.example/story)" in markdown
-    assert "## Client Links" not in markdown
-    assert "## Coverage Highlight" not in markdown
-    assert "## Quote Highlight" not in markdown
-    assert "## Strategic Value" not in markdown
-    assert "## Performance / Reach" not in markdown
-    assert "No verified" not in markdown
+    assert "## Coverage Details" in markdown
+    assert "Direct client link: Not included" in markdown
+    assert "## Message Pull-Through" in markdown
+    assert "## Quote Highlight" in markdown
+    assert "## Strategic Value" in markdown
+    assert "## Performance / Reach" in markdown
 
 
 @pytest.mark.asyncio

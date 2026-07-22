@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import hashlib
 import base64
+import html as html_lib
 import math
 import re
 import httpx
 from datetime import datetime, timezone
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from bs4 import BeautifulSoup
 from .scraper import ArticleDocument, get_domain, fetch_article_http
 from .exa import fetch_article_via_exa
@@ -133,11 +134,61 @@ def estimate_monthly_audience(authority_score: int | None) -> int:
     """Return a stable, low-precision audience estimate when measured traffic is unavailable."""
     if authority_score is None:
         return 100_000
-    raw_estimate = 10 ** (1.5 + (0.065 * authority_score))
+    # Conservative fallback calibrated below the old curve, which materially
+    # overstated niche publications. Prefer provider data whenever available.
+    raw_estimate = 10 ** (0.2 + (0.065 * authority_score))
     if raw_estimate <= 0:
         return 100_000
     magnitude = 10 ** math.floor(math.log10(raw_estimate))
     return max(1_000, int(round(raw_estimate / magnitude) * magnitude))
+
+
+def parse_semrush_monthly_visits(page_html: str) -> tuple[int, str | None] | None:
+    """Extract Semrush's current all-device visits estimate and reporting month."""
+    decoded = html_lib.unescape(page_html or "")
+    start = decoded.find('"trafficStats"')
+    if start < 0:
+        return None
+    segment = decoded[start : start + 12_000]
+    visits_match = re.search(r'"visits":\[0,\{"value":\[0,(\d+)\]', segment)
+    if not visits_match:
+        return None
+    visits = int(visits_match.group(1))
+    if not 1 <= visits <= 10_000_000_000:
+        return None
+    date_match = re.search(r'"displayDate":\[0,"(\d{4}-\d{2}-\d{2})"\]', segment)
+    return visits, date_match.group(1) if date_match else None
+
+
+async def lookup_monthly_visits_via_semrush(clean_domain: str) -> tuple[int, str | None] | None:
+    """Read the public Semrush traffic overview for a current monthly visits estimate."""
+    if not re.fullmatch(r"[a-z0-9.-]+", clean_domain):
+        logger.warning("Skipping Semrush lookup for invalid domain")
+        return None
+    url = f"https://www.semrush.com/website/{quote(clean_domain, safe='.-')}/overview/"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(15), follow_redirects=True) as client:
+            response = await client.get(url, headers=headers)
+        if response.status_code != 200:
+            logger.warning("Semrush traffic lookup failed: status_code=%s", response.status_code)
+            return None
+        result = parse_semrush_monthly_visits(response.text)
+        if result:
+            logger.info("Semrush monthly visits found for domain=%s", clean_domain)
+        else:
+            logger.warning("Semrush traffic overview omitted visits for domain=%s", clean_domain)
+        return result
+    except (httpx.HTTPError, TypeError, ValueError):
+        logger.exception("Semrush traffic lookup failed for domain=%s", clean_domain)
+        return None
 
 
 async def try_fetch_about_description(domain: str) -> str | None:
@@ -189,14 +240,27 @@ async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict
     clean_domain = domain.lower().replace("www.", "")
     observed_at = datetime.now(timezone.utc).date().isoformat()
     cached_authority = (cached_metrics or {}).get("site_authority") or {}
-    if cached_authority.get("source") == "Moz Link Explorer API v2" and cached_authority.get("value"):
+    cached_traffic = (cached_metrics or {}).get("monthly_audience") or {}
+    if (
+        cached_authority.get("source") == "Moz Link Explorer API v2"
+        and cached_authority.get("value")
+        and cached_traffic.get("source") == "Semrush website traffic overview"
+        and cached_traffic.get("value")
+    ):
         logger.info("Using cached Moz Domain Authority for domain=%s", clean_domain)
         return cached_metrics or {}
 
-    moz_authority = await lookup_domain_authority_via_moz(clean_domain)
+    moz_authority = None
+    if cached_authority.get("source") == "Moz Link Explorer API v2":
+        cached_value = re.search(r"\d+", str(cached_authority.get("value") or ""))
+        moz_authority = int(cached_value.group()) if cached_value else None
+        if moz_authority is not None:
+            logger.info("Using cached Moz Domain Authority for domain=%s", clean_domain)
+    if moz_authority is None:
+        moz_authority = await lookup_domain_authority_via_moz(clean_domain)
     opr_authority = None if moz_authority is not None else await lookup_da_via_openpagerank(clean_domain)
     authority = moz_authority if moz_authority is not None else opr_authority
-    audience = estimate_monthly_audience(authority)
+    semrush_traffic = await lookup_monthly_visits_via_semrush(clean_domain)
 
     if moz_authority is not None:
         authority_metric = {
@@ -208,11 +272,6 @@ async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict
             "estimated": False,
             "observed_at": observed_at,
         }
-        audience_source = "Best-effort model using Moz Domain Authority"
-        audience_method = (
-            "Deterministic authority-to-audience curve (10^(1.5 + 0.065 × Moz DA)), "
-            "rounded to one significant figure; not measured traffic"
-        )
     elif opr_authority is not None:
         authority_metric = {
             "label": "Site authority estimate",
@@ -223,11 +282,6 @@ async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict
             "estimated": True,
             "observed_at": observed_at,
         }
-        audience_source = "Best-effort model using Open PageRank"
-        audience_method = (
-            "Deterministic authority-to-audience curve (10^(1.5 + 0.065 × authority score)), "
-            "rounded to one significant figure; not measured traffic"
-        )
     else:
         authority_metric = {
             "label": "Site authority estimate",
@@ -238,25 +292,34 @@ async def lookup_da_muv(domain: str, cached_metrics: dict | None = None) -> dict
             "estimated": True,
             "observed_at": observed_at,
         }
-        audience_source = "Internal best-effort fallback"
-        audience_method = (
-            "Conservative 100,000 midpoint used when no authority or measured traffic source is available; "
-            "not measured traffic"
-        )
 
-    metrics = {
-        "site_authority": authority_metric,
-        "monthly_audience": {
-            "label": "Monthly audience estimate",
-            # Keep the persisted display value within the legacy VARCHAR(32)
-            # column; the label and method carry the audience-unit context.
+    if semrush_traffic:
+        raw_visits, traffic_period = semrush_traffic
+        audience = int(round(raw_visits, -3)) if raw_visits >= 10_000 else raw_visits
+        audience_metric = {
+            "label": "Estimated monthly visits",
             "value": f"~{audience:,}",
-            "source": audience_source,
-            "method": audience_method,
+            "source": "Semrush website traffic overview",
+            "method": "Semrush all-device monthly visits estimate",
+            "confidence": "medium",
+            "estimated": True,
+            "observed_at": traffic_period or observed_at,
+        }
+    else:
+        audience = estimate_monthly_audience(authority)
+        audience_metric = {
+            "label": "Estimated monthly visits",
+            "value": f"~{audience:,}",
+            "source": "Internal authority-based fallback",
+            "method": "Conservative authority-to-traffic estimate used because provider data was unavailable",
             "confidence": "low",
             "estimated": True,
             "observed_at": observed_at,
-        },
+        }
+
+    metrics = {
+        "site_authority": authority_metric,
+        "monthly_audience": audience_metric,
     }
     logger.info("publication metrics prepared for domain=%s authority_available=%s", clean_domain, bool(authority))
     return metrics

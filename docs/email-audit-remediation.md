@@ -15,10 +15,11 @@ Every generated email has a deterministic subject:
 - Submitted, final, and canonical URLs are compared. The source body hash, fetch time, method, and URL identities are persisted.
 - Anchor text and destinations are retained as structured source data. Client links are no longer inferred from flattened body text.
 - Client mentions use normalized boundaries. Quotes require client attribution; unrelated quoted text is not selected.
-- Remote publisher text is sent to the model as untrusted JSON evidence. The model supplies only three subjective analysis fields. Headline, URL, links, quote, metrics, and labels are rendered deterministically from verified data.
-- Provider/source failure returns an error. There is no successful-looking offline placeholder.
+- Remote publisher text is sent to Claude Opus 4 as untrusted JSON evidence. The model supplies only three subjective analysis fields, which are rejected if they add unsupported audience, positioning, or metric claims. Headline, URL, links, quote, metrics, and labels are rendered deterministically from verified data.
+- Model-provider failure uses a conservative evidence-only analysis so an otherwise verified report remains usable. Source-fetch failure still returns an error; there is no successful-looking placeholder article.
 - Moz v2 URL Metrics supplies the actual `Moz Domain Authority`; results are cached for 30 days per publication to conserve API rows. Open PageRank remains a clearly labeled directional fallback.
-- Monthly audience always contains a number. Until a measured traffic provider is configured, the email's `Monthly audience estimate` label identifies it as an estimate; full provenance remains available in the structured API data.
+- Semrush's website traffic overview supplies the primary `Estimated monthly visits` value. A conservative authority-based estimate is used only when provider traffic is unavailable, so the email always contains a clearly estimated number. Full provenance remains available in the structured API data.
+- The client-facing report always retains Outlet Snapshot, Coverage Details, Message Pull-Through, Quote Highlight, Strategic Value, and Performance / Reach. Missing evidence is stated inside the relevant section instead of removing the section.
 - Article identity is unique per client and URL. History, search, and summary reads require the client name and summaries are ordered from the summary record.
 - Coverage search results are re-fetched before persistence. Exact quote and client-name boundaries are verified against the fetched body.
 - Coverage hits are committed before an atomic email-delivery claim. SMTP requires verified TLS, and only source-verified hits can be sent.
