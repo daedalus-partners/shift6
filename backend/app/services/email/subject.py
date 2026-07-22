@@ -47,3 +47,12 @@ def coverage_subject(
         if match:
             publication_name = match.group(0)
     return f"Coverage Live: {publication_name}"
+
+
+def markdown_with_subject(markdown: str, subject: str) -> str:
+    """Return a self-contained email for clients that only render Markdown."""
+    body = str(markdown or "").lstrip()
+    clean_subject = re.sub(r"\s+", " ", str(subject or "Coverage Live: Publication")).strip()
+    if re.match(r"^Subject:\s*", body, flags=re.IGNORECASE):
+        return body
+    return f"Subject: {clean_subject}\n\n{body}"
