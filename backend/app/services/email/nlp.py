@@ -36,6 +36,20 @@ SOCIAL_SHARE_PATH_MARKERS = (
     "/submit",
     "/intent/",
 )
+TITLE_STOPWORDS = {
+    "about",
+    "after",
+    "from",
+    "into",
+    "larger",
+    "latest",
+    "named",
+    "that",
+    "their",
+    "this",
+    "with",
+    "year",
+}
 
 
 def client_name_pattern(client_name: str) -> re.Pattern[str] | None:
@@ -77,7 +91,11 @@ def _mention_snippet(body: str, start: int, end: int, *, limit: int = 600) -> st
     return f"{'…' if local_start else ''}{snippet[local_start:local_end].strip()}{'…' if local_end < len(snippet) else ''}"
 
 
-def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], List[str]]:
+def extract_mentions_and_links(
+    client_name: str,
+    body: str,
+    title: str | None = None,
+) -> tuple[List[str], List[str]]:
     mentions: List[str] = []
     links: List[str] = []
     if not body:
@@ -85,6 +103,11 @@ def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], 
     pattern = client_name_pattern(client_name)
     if pattern is None:
         return mentions, links
+    title_tokens = {
+        token
+        for token in re.findall(r"\w+", (title or "").lower())
+        if len(token) > 3 and token not in TITLE_STOPWORDS
+    }
     if pattern.search(body):
         candidates: list[tuple[int, int, str]] = []
         for m in pattern.finditer(body):
@@ -93,7 +116,14 @@ def extract_mentions_and_links(client_name: str, body: str) -> tuple[List[str], 
             marker_penalty = sum(250 for marker in BOILERPLATE_MARKERS if marker in lower)
             prose_bonus = 100 if 60 <= len(snippet) <= 600 else 0
             punctuation_bonus = 20 if re.search(r"[.!?]", snippet) else 0
-            score = prose_bonus + punctuation_bonus + min(len(snippet), 400) // 10 - marker_penalty
+            title_overlap_bonus = sum(45 for token in title_tokens if token in lower)
+            score = (
+                prose_bonus
+                + punctuation_bonus
+                + title_overlap_bonus
+                + min(len(snippet), 400) // 10
+                - marker_penalty
+            )
             candidates.append((score, m.start(), snippet))
         seen: set[str] = set()
         for _score, _position, snippet in sorted(candidates, key=lambda item: (-item[0], item[1])):
@@ -240,7 +270,6 @@ def extract_client_links(
     all_name_tokens = [t for t in re.findall(r"\w+", client_name.lower()) if len(t) > 2]
     name_tokens = [token for token in all_name_tokens if token not in GENERIC_CLIENT_TOKENS]
     name_tokens = name_tokens or all_name_tokens
-    exact_name = client_name_pattern(client_name)
     publisher_host = (urlsplit(article_url).hostname or "").lower().removeprefix("www.") if article_url else ""
     for link in links:
         if isinstance(link, dict):
@@ -260,8 +289,7 @@ def extract_client_links(
             continue
         searchable_url = f"{host}{path}".lower()
         url_matches = bool(name_tokens) and all(token in searchable_url for token in name_tokens)
-        anchor_matches = bool(exact_name and exact_name.search(anchor_text))
-        if url_matches or anchor_matches:
+        if url_matches:
             out.append(u)
     # dedupe keep order
     seen = set()
