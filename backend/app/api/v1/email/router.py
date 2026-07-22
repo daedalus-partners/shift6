@@ -55,7 +55,7 @@ async def summarize(input: SummarizeIn, db: Session = Depends(get_db)):
         else:
             outlet_desc, metrics = None, {}
         mentions, _ = extract_mentions_and_links(client_name, document.body)
-        client_links = extract_client_links(document.links, client_name)
+        client_links = extract_client_links(document.links, client_name, requested_url)
         best_quote = find_best_quote(document.body, client_name)
 
         data = {
