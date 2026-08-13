@@ -34,14 +34,40 @@ env_value() {
 validate_staging_environment() {
   [[ -f "${ENV_FILE}" ]] || die "missing ${ENV_FILE}; create it from .env.example"
   [[ "$(env_value APP_ENV)" == "staging" ]] || die "APP_ENV must equal staging"
-  [[ "$(env_value AUTH_MODE)" == "cloudflare_access" ]] || die "AUTH_MODE must equal cloudflare_access"
-  [[ "$(env_value CORS_ALLOW_ORIGINS)" == "https://shift6-staging.dwings.app" ]] || \
-    die "CORS_ALLOW_ORIGINS must equal https://shift6-staging.dwings.app"
-  [[ "$(env_value UI_BASE_URL)" == "https://shift6-staging.dwings.app" ]] || \
-    die "UI_BASE_URL must equal https://shift6-staging.dwings.app"
-  [[ "$(env_value API_BASE_URL)" == "https://shift6-staging.dwings.app" ]] || \
-    die "API_BASE_URL must equal https://shift6-staging.dwings.app"
   [[ "$(env_value POSTGRES_DB)" == "shift6_staging" ]] || die "POSTGRES_DB must equal shift6_staging"
+
+  local exposure frontend_port expected_local_url
+  exposure="$(env_value STAGING_EXPOSURE)"
+  frontend_port="$(env_value STAGING_FRONTEND_PORT)"
+  frontend_port="${frontend_port:-3015}"
+  expected_local_url="http://127.0.0.1:${frontend_port}"
+  case "${exposure}" in
+    local)
+      [[ "$(env_value AUTH_MODE)" == "none" ]] || \
+        die "local staging requires AUTH_MODE=none"
+      [[ "$(env_value CORS_ALLOW_ORIGINS)" == "${expected_local_url}" ]] || \
+        die "local staging CORS_ALLOW_ORIGINS must equal ${expected_local_url}"
+      [[ "$(env_value UI_BASE_URL)" == "${expected_local_url}" ]] || \
+        die "local staging UI_BASE_URL must equal ${expected_local_url}"
+      [[ "$(env_value API_BASE_URL)" == "${expected_local_url}" ]] || \
+        die "local staging API_BASE_URL must equal ${expected_local_url}"
+      ;;
+    cloudflare)
+      [[ "$(env_value AUTH_MODE)" == "cloudflare_access" ]] || \
+        die "public staging requires AUTH_MODE=cloudflare_access"
+      [[ "$(env_value CORS_ALLOW_ORIGINS)" == "https://shift6-staging.dwings.app" ]] || \
+        die "public staging CORS_ALLOW_ORIGINS must equal https://shift6-staging.dwings.app"
+      [[ "$(env_value UI_BASE_URL)" == "https://shift6-staging.dwings.app" ]] || \
+        die "public staging UI_BASE_URL must equal https://shift6-staging.dwings.app"
+      [[ "$(env_value API_BASE_URL)" == "https://shift6-staging.dwings.app" ]] || \
+        die "public staging API_BASE_URL must equal https://shift6-staging.dwings.app"
+      [[ -n "$(env_value CF_ACCESS_TEAM_DOMAIN)" ]] || die "CF_ACCESS_TEAM_DOMAIN is required"
+      [[ -n "$(env_value CF_ACCESS_AUDIENCE)" ]] || die "CF_ACCESS_AUDIENCE is required"
+      ;;
+    *)
+      die "STAGING_EXPOSURE must equal local or cloudflare"
+      ;;
+  esac
 
   local database_url password
   database_url="$(env_value DATABASE_URL)"
@@ -49,9 +75,6 @@ validate_staging_environment() {
     die "DATABASE_URL must target the staging postgres service and shift6_staging database"
   password="$(env_value POSTGRES_PASSWORD)"
   [[ -n "${password}" && "${password}" != "replace-me" ]] || die "set a unique staging POSTGRES_PASSWORD"
-
-  [[ -n "$(env_value CF_ACCESS_TEAM_DOMAIN)" ]] || die "CF_ACCESS_TEAM_DOMAIN is required"
-  [[ -n "$(env_value CF_ACCESS_AUDIENCE)" ]] || die "CF_ACCESS_AUDIENCE is required"
 
   # Phase 2 integrations must not write from staging.
   [[ -z "$(env_value SMTP_URL)" ]] || die "SMTP_URL must remain blank in staging"

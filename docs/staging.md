@@ -29,14 +29,16 @@ cd /var/www/shift6-staging
 cp .env.example .env.staging
 ```
 
-Edit `.env.staging` and make all of these staging-specific:
+Start in server-local mode. This keeps the unauthenticated app bound to loopback and makes it
+available only through an explicit SSH tunnel:
 
 ```dotenv
 APP_ENV=staging
-AUTH_MODE=cloudflare_access
-CF_ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
-CF_ACCESS_AUDIENCE=replace-with-staging-application-audience
-CORS_ALLOW_ORIGINS=https://shift6-staging.dwings.app
+STAGING_EXPOSURE=local
+AUTH_MODE=none
+CF_ACCESS_TEAM_DOMAIN=
+CF_ACCESS_AUDIENCE=
+CORS_ALLOW_ORIGINS=http://127.0.0.1:3015
 
 POSTGRES_USER=shift6_staging
 POSTGRES_PASSWORD=generate-a-new-unique-password
@@ -44,8 +46,8 @@ POSTGRES_DB=shift6_staging
 DATABASE_URL=postgresql+psycopg://shift6_staging:the-url-encoded-password@postgres:5432/shift6_staging
 
 SMTP_URL=
-UI_BASE_URL=https://shift6-staging.dwings.app
-API_BASE_URL=https://shift6-staging.dwings.app
+UI_BASE_URL=http://127.0.0.1:3015
+API_BASE_URL=http://127.0.0.1:3015
 GOOGLE_SCRIPT_URL=
 GOOGLE_SERVICE_ACCOUNT_JSON=
 GOOGLE_SHEETS_ID=
@@ -57,6 +59,15 @@ STAGING_MCP_PORT=8021
 EVIDENCE_DIR=/data/evidence
 ```
 
+Open the local staging site without exposing it publicly:
+
+```bash
+ssh -L 3015:127.0.0.1:3015 Austin_Server
+```
+
+Then visit `http://127.0.0.1:3015`. Do not add the Caddy or tunnel route while
+`STAGING_EXPOSURE=local` or `AUTH_MODE=none`.
+
 Generate the database password with a password manager. URL-encode it in `DATABASE_URL`. Third-party read-only metric keys may be reused, but staging intentionally refuses to deploy when SMTP or Google write integrations are configured.
 
 Run the deployment through the guard-railed script:
@@ -66,7 +77,9 @@ cd /var/www/shift6-staging
 bash deploy-staging.sh
 ```
 
-The script refuses the production directory, wrong Git remote, wrong branch, dirty checkout, production database name, non-staging URLs, disabled authentication, or outbound SMTP/Google writes. It uses the following Compose shape and verifies all three isolated volumes after startup:
+The script refuses the production directory, wrong Git remote, wrong branch, dirty checkout,
+production database name, unsafe URLs for the selected exposure mode, or outbound SMTP/Google
+writes. It uses the following Compose shape and verifies all three isolated volumes after startup:
 
 ```bash
 docker compose \
@@ -101,6 +114,18 @@ http://127.0.0.1:8021/mcp
 ```
 
 ## Caddy and Cloudflare
+
+Only after the Cloudflare Access application exists, change the staging environment to:
+
+```dotenv
+STAGING_EXPOSURE=cloudflare
+AUTH_MODE=cloudflare_access
+CF_ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+CF_ACCESS_AUDIENCE=replace-with-staging-application-audience
+CORS_ALLOW_ORIGINS=https://shift6-staging.dwings.app
+UI_BASE_URL=https://shift6-staging.dwings.app
+API_BASE_URL=https://shift6-staging.dwings.app
+```
 
 Add this block to `/etc/caddy/Caddyfile` on the Austin server:
 

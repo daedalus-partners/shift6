@@ -14,7 +14,7 @@ services:
       - "127.0.0.1:${STAGING_BACKEND_PORT:-8011}:8000"
     environment:
       APP_ENV: staging
-      AUTH_MODE: cloudflare_access
+      AUTH_MODE: ${AUTH_MODE}
       EVIDENCE_DIR: /data/evidence
     volumes:
       - evidence:/data/evidence
