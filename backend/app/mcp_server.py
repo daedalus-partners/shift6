@@ -74,7 +74,7 @@ def search_coverage_records(
     limit: int = 100,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Search coverage by client, publication, and an inclusive ISO date range."""
+    """Search coverage by client, publication domain or name, and an inclusive ISO date range."""
     with SessionLocal() as db:
         return search_records(
             db,

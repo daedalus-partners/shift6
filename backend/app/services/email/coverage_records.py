@@ -106,7 +106,15 @@ def _base_query(
     if publication and publication.strip():
         normalized = publication.strip().lower().removeprefix("www.")
         query = query.filter(
-            func.lower(func.coalesce(Publication.domain, Article.domain, "")) == normalized
+            or_(
+                func.lower(func.coalesce(Publication.domain, "")) == normalized,
+                func.lower(func.coalesce(Publication.name, "")) == normalized,
+                func.lower(func.coalesce(Article.domain, "")) == normalized,
+                func.lower(func.coalesce(Article.publication, "")) == normalized,
+                func.lower(func.coalesce(ArticleSourceRevision.domain, "")) == normalized,
+                func.lower(func.coalesce(ArticleSourceRevision.publication, ""))
+                == normalized,
+            )
         )
 
     date_expression = _date_expression(date_basis)
