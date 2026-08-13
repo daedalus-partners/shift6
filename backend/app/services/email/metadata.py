@@ -10,7 +10,13 @@ import httpx
 from datetime import datetime, timezone
 from urllib.parse import quote, urljoin
 from bs4 import BeautifulSoup
-from .scraper import ArticleDocument, get_domain, fetch_article_http
+from .scraper import (
+    ArticleDocument,
+    fetch_article_http,
+    get_domain,
+    parse_publication_datetime,
+    publication_date_candidate,
+)
 from .exa import fetch_article_via_exa
 from .http_safety import ResponseTooLargeError, UnsafeUrlError, safe_get_text, same_source_url
 import logging
@@ -344,7 +350,13 @@ async def fetch_or_scrape(url: str) -> ArticleDocument:
 
     exact = await fetch_article_via_exa(url)
     if exact:
-        title, desc, body, result_url = exact
+        title, desc, body, result_url, published_date = exact
+        date_candidate = publication_date_candidate(
+            published_date,
+            "exa.publishedDate",
+            "medium",
+        )
+        published_at, _ = parse_publication_datetime(published_date)
         return ArticleDocument(
             requested_url=url,
             final_url=result_url,
@@ -358,5 +370,12 @@ async def fetch_or_scrape(url: str) -> ArticleDocument:
             fetched_at=datetime.now(timezone.utc).isoformat(),
             content_sha256=hashlib.sha256((body or "").encode("utf-8")).hexdigest(),
             source_method="exa_exact_url",
+            published_at=published_at,
+            published_date_raw=date_candidate.get("raw") if date_candidate else None,
+            published_date_source=date_candidate.get("source") if date_candidate else None,
+            published_date_confidence=(
+                date_candidate.get("confidence") if date_candidate else None
+            ),
+            published_date_candidates=[date_candidate] if date_candidate else [],
         )
     raise ValueError(f"Unable to verify the submitted article source: {type(direct_error).__name__}")

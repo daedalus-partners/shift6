@@ -56,6 +56,14 @@ backend/alembic/__pycache__/
 backend/data/
 /data/
 uploads/
+/evidence/
+backups/
+exports/
+*.csv
+*.dump
+*.sql.gz
+*.tar.gz
+SHA256SUMS
 
 # Misc
 *.pid

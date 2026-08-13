@@ -8,6 +8,7 @@ from .quotes.samples import router as quotes_samples
 from .quotes.chat import router as quotes_chat
 from .quotes.generate import router as quotes_generate
 from .quotes.prompts import router as quotes_prompts
+from .evidence.router import router as evidence_router
 
 router = APIRouter()
 
@@ -19,5 +20,5 @@ router.include_router(quotes_samples)
 router.include_router(quotes_chat)
 router.include_router(quotes_generate)
 router.include_router(quotes_prompts)
-
+router.include_router(evidence_router)
 

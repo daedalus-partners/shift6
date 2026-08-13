@@ -13,7 +13,7 @@ EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 
 def extract_exact_article_result(
     requested_url: str, results: list[dict]
-) -> tuple[str | None, str | None, str | None, str] | None:
+) -> tuple[str | None, str | None, str | None, str, str | None] | None:
     for item in results:
         result_url = str(item.get("url") or item.get("id") or "").strip()
         if not result_url or not same_source_url(requested_url, result_url):
@@ -22,11 +22,16 @@ def extract_exact_article_result(
         desc = (item.get("summary") or item.get("description") or "").strip() or None
         body = (item.get("text") or "").strip() or None
         if body:
-            return title, desc, body, result_url
+            published_date = str(
+                item.get("publishedDate") or item.get("published_date") or ""
+            ).strip() or None
+            return title, desc, body, result_url, published_date
     return None
 
 
-async def fetch_article_via_exa(url: str) -> tuple[str | None, str | None, str | None, str] | None:
+async def fetch_article_via_exa(
+    url: str,
+) -> tuple[str | None, str | None, str | None, str, str | None] | None:
     """Fetch article content via Exa AI search API."""
     if not EXA_API_KEY:
         return None

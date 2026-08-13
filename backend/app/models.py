@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Boolean, Numeric
 from sqlalchemy.orm import declarative_base, relationship
 from pgvector.sqlalchemy import Vector
@@ -10,11 +10,25 @@ from uuid import uuid4
 Base = declarative_base()
 
 
+def utcnow() -> datetime:
+    """Return an aware UTC timestamp for new durable evidence records."""
+    return datetime.now(timezone.utc)
+
+
 class Client(Base):
     __tablename__ = "clients"
     id = Column(Integer, primary_key=True)
     slug = Column(String(64), unique=True, nullable=False, index=True)
     name = Column(String(128), nullable=False)
+
+
+class Publication(Base):
+    __tablename__ = "publications"
+    id = Column(Integer, primary_key=True)
+    domain = Column(String(256), unique=True, nullable=False, index=True)
+    name = Column(String(128))
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class KnowledgeFile(Base):
@@ -91,6 +105,8 @@ class Article(Base):
     __tablename__ = "articles"
     __table_args__ = (UniqueConstraint("client_name", "url", name="uq_articles_client_url"),)
     id = Column(Integer, primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=True, index=True)
+    publication_id = Column(Integer, ForeignKey("publications.id"), nullable=True, index=True)
     client_name = Column(String(128), nullable=False, index=True)
     url = Column(String(1024), nullable=False)
     final_url = Column(String(1024))
@@ -99,13 +115,47 @@ class Article(Base):
     publication = Column(String(128))
     title = Column(String(512))
     author = Column(String(256))
+    # Retain the legacy string projection for compatibility. New code should use
+    # the structured UTC value and its provenance fields below.
     published_at = Column(String(64))
+    published_at_utc = Column(DateTime(timezone=True), nullable=True, index=True)
+    published_date_raw = Column(String(256))
+    published_date_source = Column(String(64))
+    published_date_confidence = Column(String(16))
+    published_date_candidates = Column(JSON)
     description = Column(Text)
     body = Column(Text)
     source_sha256 = Column(String(64))
     source_fetched_at = Column(DateTime(timezone=True))
     source_method = Column(String(32))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ArticleSourceRevision(Base):
+    """An append-only snapshot of the source evidence used for a report."""
+
+    __tablename__ = "article_source_revisions"
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    requested_url = Column(String(1024), nullable=False)
+    final_url = Column(String(1024))
+    canonical_url = Column(String(1024))
+    domain = Column(String(256), index=True)
+    publication = Column(String(128))
+    title = Column(String(512))
+    author = Column(String(256))
+    description = Column(Text)
+    body = Column(Text)
+    source_sha256 = Column(String(64), index=True)
+    fetched_at = Column(DateTime(timezone=True))
+    source_method = Column(String(32), nullable=False)
+    published_at = Column(DateTime(timezone=True), index=True)
+    published_date_raw = Column(String(256))
+    published_date_source = Column(String(64))
+    published_date_confidence = Column(String(16))
+    published_date_candidates = Column(JSON)
+    links = Column(JSON)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 class ArticleEmbedding(Base):
@@ -119,6 +169,12 @@ class ArticleSummary(Base):
     __tablename__ = "article_summaries"
     id = Column(Integer, primary_key=True)
     article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    source_revision_id = Column(
+        Integer,
+        ForeignKey("article_source_revisions.id"),
+        nullable=True,
+        index=True,
+    )
     markdown = Column(Text, nullable=False)
     sentiment = Column(String(16))  # Positive|Neutral|Negative
     da = Column(String(32))  # Domain Authority (string to avoid strict parsing)
@@ -127,6 +183,75 @@ class ArticleSummary(Base):
     metrics = Column(JSON)
     validation_status = Column(String(32), nullable=False, default="source_verified")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class PublicationMetricSnapshot(Base):
+    __tablename__ = "publication_metric_snapshots"
+    id = Column(Integer, primary_key=True)
+    publication_id = Column(Integer, ForeignKey("publications.id"), nullable=False, index=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=True, index=True)
+    source_revision_id = Column(
+        Integer,
+        ForeignKey("article_source_revisions.id"),
+        nullable=True,
+        index=True,
+    )
+    metric_key = Column(String(64), nullable=False, index=True)
+    label = Column(String(128))
+    value_text = Column(String(128))
+    value_numeric = Column(Numeric)
+    unit = Column(String(64))
+    provider = Column(String(128), nullable=False)
+    method = Column(Text)
+    confidence = Column(String(16))
+    estimated = Column(Boolean, nullable=False, default=False)
+    observed_at = Column(DateTime(timezone=True), index=True)
+    raw = Column(JSON)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class EvidenceArtifact(Base):
+    __tablename__ = "evidence_artifacts"
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    source_revision_id = Column(
+        Integer,
+        ForeignKey("article_source_revisions.id"),
+        nullable=True,
+        index=True,
+    )
+    kind = Column(String(32), nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    storage_key = Column(String(1024))
+    sha256 = Column(String(64), index=True)
+    mime_type = Column(String(128), nullable=False, default="image/png")
+    byte_size = Column(Integer)
+    captured_at = Column(DateTime(timezone=True), index=True)
+    source_url = Column(String(1024), nullable=False)
+    final_url = Column(String(1024))
+    viewport = Column(JSON)
+    error = Column(Text)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class CoverageScoreSnapshot(Base):
+    __tablename__ = "coverage_score_snapshots"
+    id = Column(Integer, primary_key=True)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
+    source_revision_id = Column(
+        Integer,
+        ForeignKey("article_source_revisions.id"),
+        nullable=True,
+        index=True,
+    )
+    methodology_version = Column(String(64), nullable=False, index=True)
+    formula_hash = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, index=True)
+    total_score = Column(Numeric(7, 2))
+    components = Column(JSON, nullable=False)
+    inputs = Column(JSON, nullable=False)
+    calculated_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
 # Coverage Tracker models

@@ -5,6 +5,7 @@ import logging
 
 from .api.v1.router import router as api_v1_router
 from .api.v1.email.router import router as email_router
+from .api.v1.email.records import router as email_records_router
 from .api.v1.coverage.router import router as coverage_router
 from .api.v1.settings.router import router as settings_router
 from .api.v1.tasks.router import router as tasks_router
@@ -55,6 +56,7 @@ else:
 
 app.include_router(api_v1_router, prefix="")
 app.include_router(email_router, prefix="/api/v1")
+app.include_router(email_records_router, prefix="/api/v1")
 app.include_router(coverage_router, prefix="/api/v1")
 app.include_router(settings_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")

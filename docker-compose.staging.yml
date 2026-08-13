@@ -1,0 +1,52 @@
+# Isolated staging override.
+# Always invoke this together with docker-compose.yml and the
+# `shift6-staging` project name; see deploy-staging.sh.
+name: shift6-staging
+
+services:
+  postgres:
+    restart: unless-stopped
+    ports: []
+
+  backend:
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STAGING_BACKEND_PORT:-8011}:8000"
+    environment:
+      APP_ENV: staging
+      AUTH_MODE: cloudflare_access
+      EVIDENCE_DIR: /data/evidence
+    volumes:
+      - evidence:/data/evidence
+
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STAGING_FRONTEND_PORT:-3015}:80"
+    environment:
+      NODE_ENV: production
+
+  # Read-only and loopback-only. Cloudflare/Caddy must not proxy this port
+  # until a dedicated MCP authorization policy is configured.
+  mcp:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.mcp_server", "--transport", "streamable-http"]
+    ports:
+      - "127.0.0.1:${STAGING_MCP_PORT:-8021}:8021"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8021
+      EVIDENCE_DIR: /data/evidence
+    volumes:
+      - evidence:/data/evidence:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  evidence:
