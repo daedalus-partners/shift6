@@ -4,7 +4,7 @@ The staging deployment is deliberately isolated from production at every statefu
 
 | Boundary | Production | Staging |
 | --- | --- | --- |
-| Checkout | `/var/www/shift6` | `/var/www/shift6-staging` |
+| Checkout | `/var/www/shift6` | `/home/defibeats/shift6-staging` |
 | Git branch | `master` | `codex/phase1-staging` |
 | Compose project | `shift6` | `shift6-staging` |
 | Frontend host port | `127.0.0.1:3005` | `127.0.0.1:3015` |
@@ -22,10 +22,9 @@ Never mount, rename, copy, or declare the production volumes as external staging
 Clone the staging branch into its own checkout:
 
 ```bash
-sudo install -d -o defibeats -g defibeats /var/www/shift6-staging
 git clone --branch codex/phase1-staging --single-branch \
-  git@github.com:daedalus-partners/shift6.git /var/www/shift6-staging
-cd /var/www/shift6-staging
+  git@github.com:daedalus-partners/shift6.git /home/defibeats/shift6-staging
+cd /home/defibeats/shift6-staging
 cp .env.example .env.staging
 ```
 
@@ -73,7 +72,7 @@ Generate the database password with a password manager. URL-encode it in `DATABA
 Run the deployment through the guard-railed script:
 
 ```bash
-cd /var/www/shift6-staging
+cd /home/defibeats/shift6-staging
 bash deploy-staging.sh
 ```
 
@@ -94,7 +93,7 @@ Do not run the production `deploy.sh` in the staging checkout; it pulls `master`
 
 ## Coverage CSV and MCP
 
-The authenticated staging website exposes filtered CSV downloads through the Email Generator's
+The staging website exposes filtered CSV downloads through the Email Generator's
 Coverage Records section. The same query layer is available through a read-only MCP server on
 `127.0.0.1:8021/mcp`. It provides tools to list clients/publications, search or summarize records,
 retrieve one record, and return a CSV. The MCP port is deliberately **not** routed through Caddy or
@@ -155,9 +154,9 @@ Keep staging local/Tailscale-only until the Access application and tunnel route 
 Backups contain a custom-format PostgreSQL dump, uploads archive, screenshot-evidence archive, non-secret manifest, and SHA-256 checksums. The script requires a new, absolute destination and refuses production and Docker data paths.
 
 ```bash
-backup_dir="/mnt/cold/backups/shift6-staging/$(date -u +%Y-%m-%dT%H%M%SZ)"
-sudo STAGING_ENV_FILE=/var/www/shift6-staging/.env.staging \
-  bash /var/www/shift6-staging/ops/backup-staging.sh \
+backup_dir="/home/defibeats/shift6-staging-backups/$(date -u +%Y-%m-%dT%H%M%SZ)"
+STAGING_ENV_FILE=/home/defibeats/shift6-staging/.env.staging \
+  bash /home/defibeats/shift6-staging/ops/backup-staging.sh \
   --destination "${backup_dir}"
 ```
 
@@ -179,8 +178,8 @@ Restores are intentionally cumbersome. They require the source backup, the exact
 source_backup=/mnt/cold/backups/shift6-staging/2026-08-13T030000Z
 safety_backup="/mnt/cold/backups/shift6-staging/pre-restore-$(date -u +%Y-%m-%dT%H%M%SZ)"
 
-sudo STAGING_ENV_FILE=/var/www/shift6-staging/.env.staging \
-  bash /var/www/shift6-staging/ops/restore-staging.sh \
+STAGING_ENV_FILE=/home/defibeats/shift6-staging/.env.staging \
+  bash /home/defibeats/shift6-staging/ops/restore-staging.sh \
   --backup-dir "${source_backup}" \
   --pre-restore-destination "${safety_backup}" \
   --confirm-project shift6-staging

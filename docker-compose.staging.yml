@@ -42,6 +42,7 @@ services:
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8021
       EVIDENCE_DIR: /data/evidence
+      RUN_MIGRATIONS: "false"
     volumes:
       - evidence:/data/evidence:ro
     depends_on:
