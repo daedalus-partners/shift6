@@ -170,6 +170,16 @@ After each scheduled backup, monitor its exit status and verify these five files
 - `manifest.env`
 - `SHA256SUMS`
 
+Austin's installed nightly wrapper writes to the separate cold-storage RAID:
+
+```bash
+bash /home/defibeats/shift6-staging/ops/backup-staging-nightly.sh
+```
+
+The corresponding user cron entry runs at 03:45 UTC under `flock` and writes its log to
+`/home/defibeats/shift6-staging-backups/nightly.log`. The wrapper intentionally does not delete
+old recovery points. Establish and approve a retention policy before adding pruning.
+
 ## Restore drill and recovery
 
 Restores are intentionally cumbersome. They require the source backup, the exact project confirmation, and a separate destination for an automatic backup of the current staging state. The script verifies checksums and archive paths before stopping either app container.
