@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import asyncio
 import re
 from typing import Literal
@@ -200,7 +201,8 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
     styles = db.query(StyleSnippet).filter(StyleSnippet.client_id == client_id).order_by(StyleSnippet.created_at.desc()).limit(5).all()
     chunks = db.query(KnowledgeChunk).filter(KnowledgeChunk.client_id == client_id).order_by(KnowledgeChunk.id.desc()).limit(8).all()
     content = await provider.nonstream_openrouter(build_messages(client, profile, payload,
-        [s.text[:2000] for s in styles], [c.text[:1500] for c in chunks]))
+        [s.text[:2000] for s in styles], [c.text[:1500] for c in chunks]),
+        model_id=os.getenv("LINKEDIN_MODEL_ID", "openai/gpt-4.1-mini"), max_tokens=900)
     if not content or not content.strip():
         raise HTTPException(502, "Could not generate a post. Please try again.")
     content = content.strip()

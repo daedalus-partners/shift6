@@ -82,9 +82,11 @@ def _parse_completion(text: str) -> str | None:
         return None
 
 
-async def nonstream_openrouter(messages: list[dict]) -> str | None:
+async def nonstream_openrouter(messages: list[dict], *, model_id: str | None = None, max_tokens: int | None = None) -> str | None:
     # 1) Try configured model
-    payload = {"model": OPENROUTER_MODEL_ID, "messages": messages, "stream": False}
+    payload = {"model": model_id or OPENROUTER_MODEL_ID, "messages": messages, "stream": False}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     status, body = await _post_openrouter(payload)
     logger.info("OpenRouter status=%s model=%s", status, OPENROUTER_MODEL_ID)
     if status == 200:

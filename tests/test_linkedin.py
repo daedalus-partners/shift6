@@ -63,7 +63,7 @@ def test_suggestions_only_match_full_names_and_deduplicate():
 
 def test_generate_uses_saved_context_and_appends_exact_url(api, monkeypatch):
     seen = []
-    async def completion(messages):
+    async def completion(messages, **kwargs):
         seen.extend(messages)
         return 'SVT explores sustainable aviation fuel.\n\nRead more: https://invented.example/story'
     monkeypatch.setattr(provider, 'nonstream_openrouter', completion)
@@ -85,10 +85,10 @@ def test_generation_failures_and_limits(api, monkeypatch):
     monkeypatch.setattr(provider, 'OPENROUTER_API_KEY', '')
     assert api.post('/api/v1/linkedin/1/generate', json={'coverage': COVERAGE}).status_code == 503
     monkeypatch.setattr(provider, 'OPENROUTER_API_KEY', 'test-key')
-    async def empty(messages): return None
+    async def empty(messages, **kwargs): return None
     monkeypatch.setattr(provider, 'nonstream_openrouter', empty)
     assert api.post('/api/v1/linkedin/1/generate', json={'coverage': COVERAGE}).status_code == 502
-    async def long(messages): return 'x' * 3001
+    async def long(messages, **kwargs): return 'x' * 3001
     monkeypatch.setattr(provider, 'nonstream_openrouter', long)
     assert api.post('/api/v1/linkedin/1/generate', json={'coverage': COVERAGE}).status_code == 502
 
@@ -99,7 +99,7 @@ def test_link_only_reads_article_before_generation(api, monkeypatch):
     async def fetch(url):
         called.append(url)
         return SimpleNamespace(title='OXCCU in SVT', publication='SVT', attribution={'publication': {'names': ['SVT'], 'status': 'source_identified', 'evidence': []}, 'journalist': {'names': ['Johan Bergendorff'], 'status': 'source_identified', 'evidence': []}}, body=COVERAGE + ' The programme explains the development work at the site and explores the role of lower emission fuels in the aviation sector.')
-    async def complete(messages):
+    async def complete(messages, **kwargs):
         data = json.loads(messages[1]['content'])
         assert data['coverage']['publication'] == 'SVT'
         assert 'documentary' in data['coverage']['coverage']
@@ -117,7 +117,7 @@ def test_blocked_article_asks_for_fallback_and_does_not_generate(api, monkeypatc
     from app import routers_linkedin as linkedin
     async def fetch(url):
         raise ValueError('blocked')
-    async def complete(messages):
+    async def complete(messages, **kwargs):
         pytest.fail('Must not generate without coverage')
     monkeypatch.setattr(linkedin, 'fetch_article_http', fetch)
     monkeypatch.setattr(provider, 'nonstream_openrouter', complete)
@@ -130,7 +130,7 @@ def test_pasted_text_fallback_skips_fetch(api, monkeypatch):
     from app import routers_linkedin as linkedin
     async def fetch(url):
         pytest.fail('Pasted article text should avoid another blocked request')
-    async def complete(messages): return 'OXCCU features in SVT coverage.'
+    async def complete(messages, **kwargs): return 'OXCCU features in SVT coverage.'
     monkeypatch.setattr(linkedin, 'fetch_article_http', fetch)
     monkeypatch.setattr(provider, 'nonstream_openrouter', complete)
     assert api.post('/api/v1/linkedin/1/generate', json={'coverage': COVERAGE, 'url': 'https://svt.se/blocked'}).status_code == 200
@@ -183,7 +183,7 @@ def test_manual_attribution_cannot_override_article(api, monkeypatch):
     from app import routers_linkedin as linkedin
     async def fetch(url):
         return SimpleNamespace(title='Coverage', body=COVERAGE * 3, attribution={'publication': {'names': ['Source News'], 'status': 'source_identified', 'evidence': []}, 'journalist': {'names': [], 'status': 'unavailable', 'evidence': []}})
-    async def complete(messages):
+    async def complete(messages, **kwargs):
         data = json.loads(messages[1]['content'])
         assert data['coverage']['publication'] == 'Source News'
         assert data['coverage']['journalist'] == ''
