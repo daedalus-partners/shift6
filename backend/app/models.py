@@ -15,6 +15,7 @@ class Client(Base):
     id = Column(Integer, primary_key=True)
     slug = Column(String(64), unique=True, nullable=False, index=True)
     name = Column(String(128), nullable=False)
+    linkedin_profile = Column(JSON, nullable=True)
 
 
 class KnowledgeFile(Base):

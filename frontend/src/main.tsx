@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { LinkedInApp } from './ui/linkedin/LinkedInApp'
 import { EmailApp } from './ui/email/EmailApp'
 import { CoverageApp } from './ui/coverage/CoverageApp'
 import { QuotesApp } from './ui/quotes/QuotesApp'
@@ -12,12 +13,13 @@ root.render(
   <React.StrictMode>
     <BrowserRouter>
       <div style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif' }}>
-        <nav style={{ display: 'flex', gap: 24, padding: '12px 16px', borderBottom: '1px solid #9e9e9e', alignItems: 'center' }}>
+        <nav style={{ display: 'flex', gap: 24, padding: '12px 16px', borderBottom: '1px solid #9e9e9e', alignItems: 'center', flexWrap: 'wrap' }}>
           {[
             { to: '/email', label: 'Email Generator' },
             { to: '/coverage', label: 'Coverage Tracker' },
             { to: '/quotes', label: 'Quote Generator' },
             { to: '/tasks', label: 'Task Manager' },
+            { to: '/linkedin', label: 'LinkedIn Announcer' },
           ].map((item) => (
             <NavLink
               key={item.to}
@@ -60,6 +62,7 @@ root.render(
           <Route path="/coverage" element={<CoverageApp />} />
           <Route path="/quotes" element={<QuotesApp />} />
           <Route path="/tasks" element={<TaskManagerApp />} />
+          <Route path="/linkedin" element={<LinkedInApp />} />
           <Route path="/settings" element={<SettingsApp />} />
         </Routes>
       </div>

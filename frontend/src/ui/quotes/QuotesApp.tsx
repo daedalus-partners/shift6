@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
+import { ClientLinkedInProfile } from '../linkedin/ClientLinkedInProfile'
 
 type Client = { id: number; slug: string; name: string }
 type KnowledgeFile = { id: number; source_type: string; filename?: string; text?: string; uploaded_at: string }
@@ -325,6 +326,7 @@ export const QuotesApp: React.FC = () => {
         </select>
       </header>
       <main style={{ padding: 24 }}>
+        {!!clientId && <ClientLinkedInProfile key={clientId} clientId={clientId} />}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           <section style={{ border: '2px solid #000', padding: 12 }}>
             <h3 style={{ marginTop: 0 }}>Knowledge</h3>

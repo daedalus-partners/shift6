@@ -160,8 +160,9 @@ class SecurityBoundaryMiddleware(BaseHTTPMiddleware):
             return identity
         request.state.principal = identity
         peer = request.client.host if request.client else "unknown"
-        expensive = request.method not in {"HEAD", "OPTIONS"} and any(
-            request.url.path.startswith(prefix) for prefix in EXPENSIVE_PATHS
+        expensive = request.method not in {"HEAD", "OPTIONS"} and (
+            any(request.url.path.startswith(prefix) for prefix in EXPENSIVE_PATHS)
+            or (request.url.path.startswith("/api/v1/linkedin/") and request.url.path.endswith("/generate"))
         )
         registry_key = None
         if expensive and request.method not in {"GET", "HEAD", "OPTIONS"}:
