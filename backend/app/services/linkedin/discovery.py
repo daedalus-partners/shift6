@@ -34,11 +34,16 @@ def account_matches(results, name, role, publication, domain):
         url = linkedin_url(item.get('url', ''), role)
         if not url: continue
         text = (item.get('title') or '') + '\n' + (item.get('text') or '')
-        if normalized(name) not in normalized(text): continue
+        name_key = normalized(name)
+        title_key = normalized(item.get('title') or '')
+        heading_match = any(normalized(line.lstrip('# ')) == name_key for line in text.splitlines()[:8])
+        if not (title_key == name_key or title_key.startswith(name_key + ' ') or heading_match): continue
         # A publisher account should point to the source website. Journalists need an affiliation match.
         associated = domain and re.search(r'(?<![\w.-])(?:www\.)?' + re.escape(domain) + r'(?![\w.-])', text, re.I)
         if role == 'Journalist':
-            associated = bool(publication and normalized(publication) in normalized(text))
+            slug = urlsplit(url).path.strip('/').split('/')[-1]
+            linked_posts = [r for r in results if (linkedin_url(r.get('url', ''), 'post') or '').startswith('https://www.linkedin.com/posts/' + slug + '_')]
+            associated = bool(publication and (normalized(publication) in normalized(text) or any(normalized(publication) in normalized((r.get('title') or '') + ' ' + (r.get('text') or '')) for r in linked_posts)))
         matches[url] = {'name': name, 'url': url, 'role': role,
             'reason': 'Public account names the source website' if role == 'Publication' and associated else 'Public account matches the name and publication' if associated else 'Name matched; identity needs checking',
             'status': 'matched' if associated else 'candidate', 'evidence_url': item.get('url', ''), 'evidence': text[:600]}
@@ -48,6 +53,8 @@ def account_matches(results, name, role, publication, domain):
         for match in strong:
             match['status'] = 'candidate'
             match['reason'] = 'Multiple matching accounts; choose the correct one'
+    if len(strong) == 1:
+        return strong
     return values[:3]
 
 
@@ -90,16 +97,21 @@ async def discover(source, payload, profile):
     if publication:
         queries.append(('Publication', publication, f'"{publication}" LinkedIn company showcase {domain}'))
     for name in author_names:
-        queries.append(('Journalist', name, f'site:linkedin.com/in/ "{name}" "{publication}"'))
+        queries.append(('Journalist', name, f'"{name}" LinkedIn'))
+        queries.append(('Journalist', name, f'"{name}" "{publication}" LinkedIn'))
     if publication and source.get('title'):
         queries.append(('post', publication, f'site:linkedin.com/posts "{publication}" "{source["title"][:160]}"'))
-    try:
-        results = await asyncio.wait_for(asyncio.gather(*(exa_search(q, 5) for _, _, q in queries)), timeout=18)
-    except Exception:
-        lookup['status'] = 'unavailable'
-        return lookup
+    async def bounded_search(query):
+        try:
+            return await asyncio.wait_for(exa_search(query, 5), timeout=18)
+        except Exception:
+            return []
+    results = await asyncio.gather(*(bounded_search(q) for _, _, q in queries))
     post_results = []
+    grouped = {}
     for (role, name, _), items in zip(queries, results):
+        grouped.setdefault((role, name), []).extend(items)
+    for (role, name), items in grouped.items():
         if role == 'post':
             post_results.extend(items)
         else:

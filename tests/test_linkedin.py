@@ -250,3 +250,18 @@ def test_discovery_saves_corroborated_accounts(api, monkeypatch):
     monkeypatch.setattr(linkedin,'discover',discover)
     assert api.post('/api/v1/linkedin/1/generate',json={'coverage':COVERAGE}).status_code==200
     assert api.get('/api/v1/linkedin/1/profile').json()['contacts'][0]['name']=='SVT'
+
+
+def test_journalist_profile_corroborated_by_same_accounts_public_post():
+    from app.services.linkedin.discovery import account_matches
+    results=[{'url':'https://uk.linkedin.com/in/jane-smith-123','title':'Jane Smith - London','text':'Professional profile'},
+             {'url':'https://www.linkedin.com/posts/jane-smith-123_latest-issue-activity-1','title':'My latest article','text':'My latest comment in Example News is out now.'}]
+    assert account_matches(results,'Jane Smith','Journalist','Example News','example.com')[0]['status']=='matched'
+
+
+def test_parent_publisher_is_not_mislabelled_as_magazine():
+    from app.services.linkedin.discovery import account_matches
+    results=[{'url':'https://www.linkedin.com/company/parent-media','title':'Parent Media','text':'Our magazine Example News. Website https://example.com'},
+             {'url':'https://www.linkedin.com/showcase/example-news','title':'Example News','text':'Website https://example.com'}]
+    matches=account_matches(results,'Example News','Publication','Example News','example.com')
+    assert len(matches)==1 and '/showcase/example-news/' in matches[0]['url']

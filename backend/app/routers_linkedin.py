@@ -177,7 +177,9 @@ The publication and journalist fields are source-extracted attribution, not gues
 a journalist from a quoted spokesperson, a person mentioned in the article, or a saved contact.
 If either attribution field is empty, do not invent it or credit anyone in its place.
 Do not write a byline, thanks, or credit line yourself; the application adds exact source attribution.
-Do not imply a passing mention is a full feature or endorsement. Preserve uncertainty and attribution.
+The publication reports the story; do not imply it awarded a prize, funded the client, certified a
+product or endorsed the client unless the article explicitly says so. Attribute awards to the actual
+awarding body in the article. Do not imply a passing mention is a full feature or endorsement. Preserve uncertainty and attribution.
 Do not invent quotations, superlatives, journalist identities, links, dates or @handles. Use plain names.
 Use short paragraphs and a simple invitation to read. No engagement bait, emoji by default, or generic
 'delighted/thrilled' opening. No hashtags unless include_hashtags is true. If enabled, use at most
