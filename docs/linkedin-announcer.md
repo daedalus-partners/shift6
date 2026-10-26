@@ -3,7 +3,7 @@
 Fifth workflow tab at `/linkedin`. Existing Quote Generator clients are shared, not duplicated.
 The nullable `clients.linkedin_profile` JSON column stores the company page, voice, audience,
 approved public background, example posts, hashtags and confirmed profile contacts. Alembic
-revision `f5a7b9c1d3e6` adds the column; apply migrations before starting the new backend.
+revision `f5a7b9c1d3e6` adds the column after production revision `c3e5f7a9b1d2`; apply migrations before starting the new backend.
 The same profile editor appears in Quote Generator and the announcer. Other quote data and
 saved style/background remain available; LinkedIn examples do not pollute sample media quotes.
 
@@ -64,3 +64,5 @@ https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares
 `pytest tests/test_linkedin.py` uses an isolated SQLite client table and mocked provider, never production.
 Frontend build and focused TypeScript checks cover the new components. Live provider quality and
 production verification require deployment access and configured OpenRouter credentials.
+
+Release is based on production master and excludes Phase 1 staging changes. When merging into the staging branch, reconcile the existing LinkedIn migration parent with its Phase 1 migration before upgrading. LinkedIn generation uses the existing expensive-request rate and concurrency limits.
