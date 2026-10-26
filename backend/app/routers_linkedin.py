@@ -2,17 +2,19 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import re
 from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from .db import get_db
 from .models import Client, KnowledgeChunk, StyleSnippet
 from . import routers_generate as provider
+from .services.email.scraper import fetch_article_http
 
 router = APIRouter(prefix="/api/v1/linkedin", tags=["linkedin"])
 
@@ -66,7 +68,7 @@ class Profile(BaseModel):
 
 
 class DraftRequest(BaseModel):
-    coverage: str = Field(min_length=80, max_length=60000)
+    coverage: str = Field(default="", max_length=60000)
     url: str = Field(default="", max_length=2048)
     publication: str = Field(default="", max_length=256)
     journalist: str = Field(default="", max_length=256)
@@ -76,14 +78,40 @@ class DraftRequest(BaseModel):
     @field_validator("coverage")
     @classmethod
     def actual_text(cls, value):
-        if len(value.strip()) < 80 or len(value.split()) < 12:
-            raise ValueError("Paste the article text or a substantive coverage excerpt, not just a link")
-        return value.strip()
+        value = value.strip()
+        if value and not value.startswith("https://") and (len(value) < 80 or len(value.split()) < 12):
+            raise ValueError("Paste the article link, or at least 80 characters of article text")
+        return value
 
     @field_validator("url")
     @classmethod
     def coverage_url(cls, value):
         return web_url(value)
+
+    @model_validator(mode="after")
+    def require_source(self):
+        if self.coverage.startswith("https://") and not any(c.isspace() for c in self.coverage):
+            self.url = web_url(self.coverage)
+            self.coverage = ""
+        if not self.url and not self.coverage:
+            raise ValueError("Paste an article link to generate a post")
+        return self
+
+
+async def resolve_coverage(payload: DraftRequest):
+    if payload.coverage:
+        return payload, {"method": "pasted_text", "title": "Pasted article text", "publication": payload.publication, "excerpt": payload.coverage[:2000]}
+    try:
+        article = await asyncio.wait_for(fetch_article_http(payload.url), timeout=35)
+        body = article.body.strip()
+        blocked = re.search(r"access denied|verify (?:that )?you are human|just a moment|enable javascript|checking your browser|subscribe to continue|sign in to continue", body[:1500], re.I)
+        if blocked or len(body) < 200 or len(body.split()) < 35:
+            raise ValueError("Insufficient article text")
+    except Exception:
+        raise HTTPException(422, "We couldn’t read this article. The site may block access or require a subscription. Open ‘Paste article text instead’, paste the article, and generate again.")
+    text = "\n\n".join(part for part in [article.title, body] if part)[:60000]
+    resolved = payload.model_copy(update={"coverage": text, "publication": payload.publication or article.publication or ""})
+    return resolved, {"method": "article_link", "title": article.title or "Article", "publication": resolved.publication, "excerpt": body[:2000]}
 
 
 def get_client(db, client_id):
@@ -150,6 +178,7 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
     profile = Profile.model_validate(client.linkedin_profile or {})
     if not provider.OPENROUTER_API_KEY:
         raise HTTPException(503, "Post generation is not configured. Please contact your administrator.")
+    payload, source = await resolve_coverage(payload)
     styles = db.query(StyleSnippet).filter(StyleSnippet.client_id == client_id).order_by(StyleSnippet.created_at.desc()).limit(5).all()
     chunks = db.query(KnowledgeChunk).filter(KnowledgeChunk.client_id == client_id).order_by(KnowledgeChunk.id.desc()).limit(8).all()
     content = await provider.nonstream_openrouter(build_messages(client, profile, payload,
@@ -163,7 +192,7 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
         content += "\n\nRead the full piece: " + payload.url
     if len(content) > 3000:
         raise HTTPException(502, "The draft exceeded LinkedIn's post limit. Please try again with Short selected.")
-    return {"content": content, "mentions": suggested_mentions(profile, payload),
+    return {"content": content, "source": source, "mentions": suggested_mentions(profile, payload),
             "checks": ["Check names, claims and attribution against the original coverage.",
                        "Select each suggested account in LinkedIn's @ menu to activate the tag.",
                        "Use an approved image or article preview; check reproduction rights before uploading clippings."]}

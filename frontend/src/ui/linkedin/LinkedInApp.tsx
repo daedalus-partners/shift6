@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { button, control, ClientLinkedInProfile, Contact, jsonRequest } from './ClientLinkedInProfile'
 
 type Client = { id: number; name: string }
-type Draft = { content: string; mentions: (Contact & { reason: string })[]; checks: string[] }
+type Draft = { content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; excerpt: string } }
 export function LinkedInApp() {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState(0)
@@ -41,29 +41,33 @@ export function LinkedInApp() {
   }
   return <main style={{ maxWidth: 1100, margin: '0 auto', padding: 24, color: '#111' }}>
     <h1>LinkedIn Announcer</h1>
-    <p>Turn media coverage into a post in your client’s voice.</p>
+    <p>Paste a coverage link. We’ll read the article and write the LinkedIn post in your client’s voice.</p>
     <label>Client <select style={{ ...control, width: 'auto', minWidth: 200 }} value={clientId} onChange={e => changeClient(Number(e.target.value))} disabled={!clients.length}>{!clients.length && <option value={0}>No clients available</option>}{clients.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
     {!clients.length && <p>Add a client in <a href="/quotes">Quote Generator</a> to get started.</p>}
     {!!clientId && <ClientLinkedInProfile key={clientId} clientId={clientId} />}
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 24, marginTop: 24 }}>
       <form onSubmit={generate}>
-        <label style={{ display: 'block' }}>Coverage text<textarea style={{ ...control, marginTop: 8 }} rows={14} required minLength={80} maxLength={60000} value={coverage} onChange={e => setCoverage(e.target.value)} placeholder="Paste the article or coverage excerpt, including the headline and byline where available. A URL alone is not enough." /></label>
-        <p style={{ fontSize: 13 }}>Only the supplied coverage is used as evidence for the announcement. Check the draft against the original before publishing.</p>
+        <label style={{ display: 'block' }}>Article link<input style={{ ...control, marginTop: 8 }} type="url" maxLength={2048} required={!coverage.trim()} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://publication.com/your-coverage" /></label>
+        <p style={{ fontSize: 13 }}>We’ll read the coverage and write the post for you. No need to write a summary.</p>
+        <details style={{ margin: '16px 0' }}><summary style={{ cursor: 'pointer' }}>Paste article text instead</summary>
+          <p>For paywalled or blocked articles, paste the text here. This text will be used instead of reading the link.</p>
+          <textarea aria-label="Article text fallback" style={control} rows={8} minLength={80} maxLength={60000} value={coverage} onChange={e => setCoverage(e.target.value)} placeholder="Paste the article text, including the headline and byline where available." />
+        </details>
         {([
-          ['Article URL (optional)', url, setUrl, 'url', 2048],
           ['Publication (optional)', publication, setPublication, 'text', 256],
           ['Journalist (optional)', journalist, setJournalist, 'text', 256],
           ['Focus or angle (optional)', angle, setAngle, 'text', 2000],
         ] as const).map(([label, value, setter, type, maxLength]) => <label key={label} style={{ display: 'block', margin: '14px 0' }}>{label}<input style={control} type={type} maxLength={maxLength} value={value} onChange={e => setter(e.target.value)} /></label>)}
         <label>Post length<select style={{ ...control, marginBottom: 16 }} value={length} onChange={e => setLength(e.target.value)}><option>Standard</option><option>Short</option></select></label>
-        <button style={{ ...button, background: '#111', color: '#fff' }} disabled={!clientId || busy || coverage.trim().length < 80}>{busy ? 'Writing post…' : draft ? 'Generate another draft' : 'Generate post'}</button>
+        <button style={{ ...button, background: '#111', color: '#fff' }} disabled={!clientId || busy || (!url.trim() && coverage.trim().length < 80)}>{busy ? 'Reading coverage and writing…' : draft ? 'Generate another draft' : 'Generate post'}</button>
       </form>
       <section aria-label="Generated LinkedIn post" style={{ border: '1px solid #aaa', borderRadius: 6, padding: 20, alignSelf: 'start' }}>
         <h2 style={{ marginTop: 0 }}>Your post</h2>
-        {!draft ? <p>{busy ? 'Preparing your announcement…' : 'Your editable draft and suggested tags will appear here.'}</p> : <>
+        {!draft ? <p>{busy ? 'Reading the article and preparing your announcement…' : 'Your editable draft and suggested tags will appear here.'}</p> : <>
           <label>Edit post<textarea style={{ ...control, marginTop: 8 }} rows={17} value={draft.content} onChange={e => setDraft({ ...draft, content: e.target.value })} /></label>
           <p style={{ color: draft.content.length > 3000 ? '#b00000' : '#555' }}>{draft.content.length.toLocaleString()} / 3,000 characters</p>
           <button style={button} type="button" disabled={!draft.content.trim() || draft.content.length > 3000} onClick={copy}>Copy post</button>
+          {draft.source && <details style={{ marginTop: 16 }}><summary>Coverage used for this post</summary><p><strong>{draft.source.title}</strong>{draft.source.publication ? ` · ${draft.source.publication}` : ''}</p><p style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>{draft.source.excerpt}</p></details>}
           <h3>Suggested tags</h3>
           <p>Copying a name does not create a live tag. In LinkedIn, type @ and select the matching account. Check these saved profiles first.</p>
           {draft.mentions.length ? <ul>{draft.mentions.map(m => <li key={m.url} style={{ marginBottom: 10 }}><a href={m.url} target="_blank" rel="noreferrer">{m.name}</a> · {m.role}<div style={{ fontSize: 13 }}>{m.reason}</div></li>)}</ul> : <p>No confirmed saved contacts matched. Verify the journalist or publication’s profile, then save it in the client profile for next time.</p>}

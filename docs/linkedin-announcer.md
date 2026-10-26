@@ -7,7 +7,7 @@ revision `f5a7b9c1d3e6` adds the column after production revision `c3e5f7a9b1d2`
 The same profile editor appears in Quote Generator and the announcer. Other quote data and
 saved style/background remain available; LinkedIn examples do not pollute sample media quotes.
 
-Paste substantive coverage text; URL is optional and is not fetched. Publisher, journalist,
+Paste an article URL; the server reads it with the existing bounded, redirect-validated public HTTP fetcher, respecting robots and publisher rate limits. Pasted article text is an optional fallback for blocked sites and overrides URL fetching. Failed, short or recognizable challenge pages do not reach generation. Publisher, journalist,
 angle and length are optional per-post inputs. The existing OpenRouter configuration generates
 an editable draft. No LinkedIn account connection or publishing is performed. The exact provided
 article URL is appended once. Generation failures are surfaced, with no fabricated fallback.
