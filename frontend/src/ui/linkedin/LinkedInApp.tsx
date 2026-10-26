@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react'
 import { button, control, ClientLinkedInProfile, Contact, jsonRequest } from './ClientLinkedInProfile'
 
 type Client = { id: number; name: string }
-type Draft = { content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; journalist?: string; attribution?: Record<string, {status: string; evidence: {source: string; names: string[]}[]}>; excerpt: string } }
+type Account = Contact & { status: string; reason: string; evidence_url: string }
+type Discovery = { accounts: Account[]; posts: {url: string; title: string; status: string; reason: string; excerpt: string}[]; status: string; publication_search?: string; journalist_search?: string; post_search: string }
+type Draft = { repost_content?: string; discovery?: Discovery; content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; journalist?: string; attribution?: Record<string, {status: string; evidence: {source: string; names: string[]}[]}>; excerpt: string } }
 export function LinkedInApp() {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState(0)
@@ -10,6 +12,8 @@ export function LinkedInApp() {
   const [url, setUrl] = useState('')
   const [angle, setAngle] = useState('')
   const [length, setLength] = useState('Standard')
+  const [includeHashtags, setIncludeHashtags] = useState(false)
+  const [postMode, setPostMode] = useState<'article' | 'repost'>('article')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -26,17 +30,18 @@ export function LinkedInApp() {
   const generate = async (e: React.FormEvent) => {
     e.preventDefault()
     const request = ++generation.current
-    setBusy(true); setMessage(''); setDraft(null)
+    setBusy(true); setMessage(''); setDraft(null); setPostMode('article')
     try {
-      const data = await jsonRequest(`/api/v1/linkedin/${clientId}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverage, url, angle, length }) })
-      if (request === generation.current) setDraft(data)
+      const data = await jsonRequest(`/api/v1/linkedin/${clientId}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverage, url, angle, length, include_hashtags: includeHashtags }) })
+      if (request === generation.current) { setDraft(data); if (data.discovery?.posts?.some((p: any) => p.status === 'article_link_matched')) setPostMode('repost') }
     } catch (e: any) { if (request === generation.current) setMessage(e.message) }
     finally { if (request === generation.current) setBusy(false) }
   }
   const copy = async () => {
-    try { await navigator.clipboard.writeText(draft!.content); setMessage('Post copied. Activate the suggested tags in LinkedIn before publishing.') }
+    try { await navigator.clipboard.writeText(postMode === 'repost' ? draft!.repost_content || draft!.content : draft!.content); setMessage(postMode === 'repost' ? 'Commentary copied. Open the publisher’s post and choose Repost with your thoughts.' : 'Post copied. Select any account mentions in LinkedIn before publishing.') }
     catch { setMessage('Copy unavailable. Select and copy the post text below.') }
   }
+  const displayedContent = draft ? (postMode === 'repost' ? draft.repost_content || draft.content : draft.content) : ''
   return <main style={{ maxWidth: 1100, margin: '0 auto', padding: 24, color: '#111' }}>
     <h1>LinkedIn Announcer</h1>
     <p>Paste a coverage link. We’ll read the article and write the LinkedIn post in your client’s voice.</p>
@@ -56,24 +61,33 @@ export function LinkedInApp() {
           ['Focus or angle (optional)', angle, setAngle, 'text', 2000],
         ] as const).map(([label, value, setter, type, maxLength]) => <label key={label} style={{ display: 'block', margin: '14px 0' }}>{label}<input style={control} type={type} maxLength={maxLength} value={value} onChange={e => setter(e.target.value)} /></label>)}
         <label>Post length<select style={{ ...control, marginBottom: 16 }} value={length} onChange={e => setLength(e.target.value)}><option>Standard</option><option>Short</option></select></label>
+        <label style={{ display: 'flex', gap: 8, marginBottom: 16 }}><input type="checkbox" checked={includeHashtags} onChange={e => setIncludeHashtags(e.target.checked)} />Include hashtags (optional)</label>
         <button style={{ ...button, background: '#111', color: '#fff' }} disabled={!clientId || busy || (!url.trim() && coverage.trim().length < 80)}>{busy ? 'Reading coverage and writing…' : draft ? 'Generate another draft' : 'Generate post'}</button>
       </form>
       <section aria-label="Generated LinkedIn post" style={{ border: '1px solid #aaa', borderRadius: 6, padding: 20, alignSelf: 'start' }}>
         <h2 style={{ marginTop: 0 }}>Your post</h2>
-        {!draft ? <p>{busy ? 'Reading the article and preparing your announcement…' : 'Your editable draft and suggested tags will appear here.'}</p> : <>
-          <label>Edit post<textarea style={{ ...control, marginTop: 8 }} rows={17} value={draft.content} onChange={e => setDraft({ ...draft, content: e.target.value })} /></label>
-          <p style={{ color: draft.content.length > 3000 ? '#b00000' : '#555' }}>{draft.content.length.toLocaleString()} / 3,000 characters</p>
-          <button style={button} type="button" disabled={!draft.content.trim() || draft.content.length > 3000} onClick={copy}>Copy post</button>
+        {!draft ? <p>{busy ? 'Reading the article and preparing your announcement…' : 'Your draft, account matches and sharing recommendation will appear here.'}</p> : <>
+          {draft.discovery && <div style={{ background: '#f5f5f5', padding: 14, marginBottom: 16 }}>
+            <strong>{draft.discovery.posts.length ? 'Publisher LinkedIn post found' : 'Share the article link'}</strong>
+            <p>{draft.discovery.posts.length ? 'Check the original below. Repost with your thoughts to add this commentary above the publisher’s post, or publish your own post with the article link.' : draft.discovery.status === 'searched' ? 'No matching post from the publication was found in public search. Use the article link; LinkedIn search below can catch posts that are not indexed.' : 'Public LinkedIn search is temporarily unavailable. Your article-link post is ready; you can also check LinkedIn below.'}</p>
+            {draft.discovery.posts.map(p => <p key={p.url}><a href={p.url} target="_blank" rel="noreferrer">Open publisher’s post ↗</a><br /><small>{p.reason}</small></p>)}
+            <a href={draft.discovery.post_search} target="_blank" rel="noreferrer">Check for this story on LinkedIn ↗</a>
+          </div>}
+          {draft.discovery && draft.discovery.posts.length > 0 && <label style={{display:'block',marginBottom:12}}>How will you share it?<select style={control} value={postMode} onChange={e => setPostMode(e.target.value as 'article' | 'repost')}><option value="article">My own post + article link</option><option value="repost">Repost with my thoughts</option></select></label>}
+          <label>{postMode === 'repost' ? 'Your repost commentary' : 'Edit post'}<textarea style={{ ...control, marginTop: 8 }} rows={17} value={postMode === 'repost' ? draft.repost_content || draft.content : draft.content} onChange={e => setDraft({ ...draft, [postMode === 'repost' ? 'repost_content' : 'content']: e.target.value })} /></label>
+          <p style={{ color: displayedContent.length > 3000 ? '#b00000' : '#555' }}>{displayedContent.length.toLocaleString()} / 3,000 characters</p>
+          <button style={button} type="button" disabled={!displayedContent.trim() || displayedContent.length > 3000} onClick={copy}>Copy post</button>
           {draft.source && <div style={{ marginTop: 16 }}><strong>Attribution from the source</strong><p>Publication: {draft.source.publication || "Not clearly identified — omitted"}<br />Journalist / byline: {draft.source.journalist || "Not clearly identified — omitted"}</p></div>}
           {draft.source && <details style={{ marginTop: 16 }}><summary>Coverage and attribution evidence</summary>{draft.source.attribution && Object.entries(draft.source.attribution).map(([key, value]) => <div key={key}><strong>{key}: {value.status.replaceAll("_", " ")}</strong><ul>{value.evidence.map((item, i) => <li key={i}>{item.source}: {item.names.join(", ")}</li>)}</ul></div>)}<p><strong>{draft.source.title}</strong>{draft.source.publication ? ` · ${draft.source.publication}` : ''}</p><p style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>{draft.source.excerpt}</p></details>}
-          <h3>Suggested tags</h3>
-          <p>Copying a name does not create a live tag. In LinkedIn, type @ and select the matching account. Check these saved profiles first.</p>
-          {draft.mentions.length ? <ul>{draft.mentions.map(m => <li key={m.url} style={{ marginBottom: 10 }}><a href={m.url} target="_blank" rel="noreferrer">{m.name}</a> · {m.role}<div style={{ fontSize: 13 }}>{m.reason}</div></li>)}</ul> : <p>No confirmed saved contacts matched. Verify the journalist or publication’s profile, then save it in the client profile for next time.</p>}
+          <h3>People and publication</h3>
+          <p>We find the accounts for this coverage. Open an account to check it; in LinkedIn, type @ and select that name to make the mention clickable.</p>
+          {draft.discovery?.accounts.map(account => <div key={account.url} style={{borderTop:'1px solid #ddd',padding:'12px 0'}}><a href={account.url} target="_blank" rel="noreferrer"><strong>{account.name}</strong> ↗</a><div>{account.role} · {account.status === 'candidate' ? 'Possible match — check identity' : account.status === 'saved' ? 'Saved account' : 'Account matched and saved'}</div><small>{account.reason}</small></div>)}
+          {draft.discovery && <div style={{marginTop:12}}>{draft.discovery.publication_search && <p><a href={draft.discovery.publication_search} target="_blank" rel="noreferrer">{draft.discovery.accounts.some(a => a.role === 'Publication') ? 'Other publication account results' : `Find ${draft.source?.publication || 'the publication'} on LinkedIn`} ↗</a></p>}{draft.discovery.journalist_search && <p><a href={draft.discovery.journalist_search} target="_blank" rel="noreferrer">{draft.discovery.accounts.some(a => a.role === 'Journalist') ? 'Other journalist account results' : `Find ${draft.source?.journalist || 'the journalist'} on LinkedIn`} ↗</a></p>}</div>}
           <h3>Before publishing</h3><ul>{draft.checks.map(check => <li key={check}>{check}</li>)}</ul>
         </>}
         <p role="status" aria-live="polite">{message}</p>
       </section>
     </div>
-    <details style={{ marginTop: 24 }}><summary>What makes a useful coverage announcement?</summary><p>Lead with the news, share one relevant takeaway, credit the journalist and publication, and give readers the article link. Use short paragraphs, relevant mentions and a few focused hashtags. A passing mention should not become a claim of endorsement.</p><p>Based on <a href="https://www.linkedin.com/business/talent/blog/talent-acquisition/how-to-write-engaging-post-in-linkedin-feed" target="_blank" rel="noreferrer">LinkedIn’s posting guidance</a> and <a href="https://www.linkedin.com/help/linkedin/answer/a525082/mention-people-in-your-posts" target="_blank" rel="noreferrer">mention instructions</a>.</p></details>
+    <details style={{ marginTop: 24 }}><summary>What makes a useful coverage announcement?</summary><p>Lead with the news, share one relevant takeaway, credit the journalist and publication, and give readers the article link. Use short paragraphs and relevant mentions. Hashtags are optional. A passing mention should not become a claim of endorsement.</p><p>Based on <a href="https://www.linkedin.com/business/talent/blog/talent-acquisition/how-to-write-engaging-post-in-linkedin-feed" target="_blank" rel="noreferrer">LinkedIn’s posting guidance</a> and <a href="https://www.linkedin.com/help/linkedin/answer/a525082/mention-people-in-your-posts" target="_blank" rel="noreferrer">mention instructions</a>.</p></details>
   </main>
 }

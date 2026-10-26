@@ -77,3 +77,24 @@ shows attribution and evidence; the server appends exact source credit separatel
 For pasted fallback text, only explicit publication/byline lines are accepted. This cannot guarantee
 100% real-world correctness: publishers can omit or mislabel their own metadata. Missing/conflicting
 attribution is explicitly marked and omitted instead of guessed.
+
+## Sharing and account discovery
+
+Hashtags are opt-in per draft, off by default even if a client has saved hashtag preferences.
+The existing Exa search integration finds public publication/company/showcase and journalist accounts.
+Publisher matches require the exact account name plus its source website in the public result;
+journalist matches require name plus publication. Multiple plausible accounts remain candidates.
+Unambiguous corroborated matches are saved to the existing client's contacts automatically.
+Search failures or absent results have direct LinkedIn search links rather than a dead-end panel.
+
+Search for the publication's original LinkedIn post, then scope a second lookup to its discovered
+account slug. Reposting is offered only for publisher-account posts with an article-URL or strong
+headline match; third-party related posts are excluded. Exact article-link matches recommend
+repost commentary; headline-only matches require checking. Original copy includes the article link;
+repost copy omits that duplicate link. No posting occurs automatically. Search cannot prove absence
+of a LinkedIn post: indexing, visibility and shortened URLs can limit matches.
+
+Editorial rationale: hashtags are optional, not a guaranteed distribution tactic. Adding useful
+commentary to a publisher's original is supported by LinkedIn's repost workflow; no claim is made
+that it always outperforms an original article-link post.
+https://www.linkedin.com/help/linkedin/answer/a551424/repost-a-linkedin-page-post?lang=en

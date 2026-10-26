@@ -17,6 +17,7 @@ from .models import Client, KnowledgeChunk, StyleSnippet
 from . import routers_generate as provider
 from .services.email.scraper import fetch_article_http
 from .services.email.attribution import pasted_attribution
+from .services.linkedin.discovery import discover
 
 router = APIRouter(prefix="/api/v1/linkedin", tags=["linkedin"])
 
@@ -28,7 +29,7 @@ def web_url(value: str, linkedin: bool = False) -> str:
     parsed = urlsplit(value)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Use a full https URL")
-    if linkedin and (parsed.hostname.lower() not in {"linkedin.com", "www.linkedin.com", "uk.linkedin.com"} or not parsed.path.startswith(("/in/", "/company/"))):
+    if linkedin and (parsed.hostname.lower() not in {"linkedin.com", "www.linkedin.com", "uk.linkedin.com"} or not parsed.path.startswith(("/in/", "/company/", "/showcase/"))):
         raise ValueError("Use a LinkedIn person or company profile URL")
     return value
 
@@ -74,6 +75,7 @@ class DraftRequest(BaseModel):
     url: str = Field(default="", max_length=2048)
     angle: str = Field(default="", max_length=2000)
     length: Literal["Short", "Standard"] = "Standard"
+    include_hashtags: bool = False
 
     @field_validator("coverage")
     @classmethod
@@ -178,7 +180,8 @@ Do not write a byline, thanks, or credit line yourself; the application adds exa
 Do not imply a passing mention is a full feature or endorsement. Preserve uncertainty and attribution.
 Do not invent quotations, superlatives, journalist identities, links, dates or @handles. Use plain names.
 Use short paragraphs and a simple invitation to read. No engagement bait, emoji by default, or generic
-'delighted/thrilled' opening. Use at most three relevant hashtags from saved preferences, or none.
+'delighted/thrilled' opening. No hashtags unless include_hashtags is true. If enabled, use at most
+two relevant hashtags from saved preferences. Hashtags are optional, never a required sign-off.
 No URLs in output: the application appends the supplied article URL exactly once.
 Aim for 60-100 words for Short or 120-180 for Standard. Never exceed 2600 characters.
 If coverage is negative or mixed, acknowledge the actual substance without celebratory framing.
@@ -200,14 +203,18 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
     payload, source = await resolve_coverage(payload)
     styles = db.query(StyleSnippet).filter(StyleSnippet.client_id == client_id).order_by(StyleSnippet.created_at.desc()).limit(5).all()
     chunks = db.query(KnowledgeChunk).filter(KnowledgeChunk.client_id == client_id).order_by(KnowledgeChunk.id.desc()).limit(8).all()
-    content = await provider.nonstream_openrouter(build_messages(client, profile, payload,
-        [s.text[:2000] for s in styles], [c.text[:1500] for c in chunks]),
-        model_id=os.getenv("LINKEDIN_MODEL_ID", "openai/gpt-4.1-mini"), max_tokens=900)
+    content, discovery = await asyncio.gather(
+        provider.nonstream_openrouter(build_messages(client, profile, payload,
+            [s.text[:2000] for s in styles], [c.text[:1500] for c in chunks]),
+            model_id=os.getenv("LINKEDIN_MODEL_ID", "openai/gpt-4.1-mini"), max_tokens=900),
+        discover(source, payload, profile))
     if not content or not content.strip():
         raise HTTPException(502, "Could not generate a post. Please try again.")
     content = content.strip()
     # Do not allow provider-invented URLs to become publishable draft links.
     content = re.sub(r"https?://\S+", "", content).strip()
+    if not payload.include_hashtags:
+        content = re.sub(r"(?<!\w)#[\w]+", "", content).strip()
     credits = []
     if payload.publication:
         credits.append("Coverage: " + payload.publication)
@@ -215,11 +222,22 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
         credits.append("Byline: " + payload.journalist)
     if credits:
         content += "\n\n" + "\n".join(credits)
+    # Reuse automatically corroborated accounts on future announcements. Ambiguous results stay candidates.
+    matched = [a for a in discovery["accounts"] if a["status"] == "matched"]
+    if matched:
+        db.refresh(client)
+        current = Profile.model_validate(client.linkedin_profile or {})
+        for account in matched:
+            if len(current.contacts) < 40 and not any(c.url == account["url"] for c in current.contacts):
+                current.contacts.append(Contact(**{k: account[k] for k in ("name", "url", "role")}))
+        client.linkedin_profile = current.model_dump()
+        db.commit()
+    repost_content = content
     if payload.url:
         content += "\n\nRead the full piece: " + payload.url
     if len(content) > 3000:
         raise HTTPException(502, "The draft exceeded LinkedIn's post limit. Please try again with Short selected.")
-    return {"content": content, "source": source, "mentions": suggested_mentions(profile, payload),
+    return {"content": content, "repost_content": repost_content, "discovery": discovery, "source": source, "mentions": suggested_mentions(profile, payload),
             "checks": ["Check names, claims and attribution against the original coverage.",
                        "Select each suggested account in LinkedIn's @ menu to activate the tag.",
                        "Use an approved image or article preview; check reproduction rights before uploading clippings."]}
