@@ -98,7 +98,7 @@ def test_link_only_reads_article_before_generation(api, monkeypatch):
     called = []
     async def fetch(url):
         called.append(url)
-        return SimpleNamespace(title='OXCCU in SVT', publication='SVT', body=COVERAGE + ' The programme explains the development work at the site and explores the role of lower emission fuels in the aviation sector.')
+        return SimpleNamespace(title='OXCCU in SVT', publication='SVT', attribution={'publication': {'names': ['SVT'], 'status': 'source_identified', 'evidence': []}, 'journalist': {'names': ['Johan Bergendorff'], 'status': 'source_identified', 'evidence': []}}, body=COVERAGE + ' The programme explains the development work at the site and explores the role of lower emission fuels in the aviation sector.')
     async def complete(messages):
         data = json.loads(messages[1]['content'])
         assert data['coverage']['publication'] == 'SVT'
@@ -136,3 +136,68 @@ def test_pasted_text_fallback_skips_fetch(api, monkeypatch):
     assert api.post('/api/v1/linkedin/1/generate', json={'coverage': COVERAGE, 'url': 'https://svt.se/blocked'}).status_code == 200
     assert DraftRequest(coverage='https://svt.se/story').url == 'https://svt.se/story'
     assert api.post('/api/v1/linkedin/1/generate', json={}).status_code == 422
+
+
+def test_attribution_uses_article_metadata_and_ignores_quoted_people():
+    from app.services.email.scraper import parse_article_html
+    html = """<meta property="og:site_name" content="Example News"><meta name="author" content="Jane Smith">
+    <article><p>CEO Andrew Symes said the project is progressing.</p></article>"""
+    attr = parse_article_html(html, 'https://news.example/story').attribution
+    assert attr['publication']['names'] == ['Example News']
+    assert attr['journalist']['names'] == ['Jane Smith']
+    assert attr['journalist']['evidence'][0]['source'] == 'meta author'
+
+
+def test_attribution_abstains_on_conflicting_authors_and_publishers():
+    from app.services.email.scraper import parse_article_html
+    html = """<meta property="og:site_name" content="Example News"><meta name="author" content="Jane Smith">
+    <script type="application/ld+json">{"@type":"NewsArticle","url":"https://news.example/story", "publisher":{"name":"Other News"},"author":{"@type":"Person","name":"John Doe"}}</script>"""
+    attr = parse_article_html(html, 'https://news.example/story').attribution
+    assert attr['publication']['status'] == 'conflicting'
+    assert attr['journalist']['status'] == 'conflicting'
+    assert not attr['publication']['names'] and not attr['journalist']['names']
+
+
+def test_attribution_ignores_related_articles_and_footer_authors():
+    from app.services.email.scraper import parse_article_html
+    html = """<script type="application/ld+json">{"@graph":[
+    {"@type":"NewsArticle","url":"https://news.example/story","author":[{"name":"Jane Smith"},{"name":"Alex Jones"}],"publisher":{"name":"Example News"}},
+    {"@type":"NewsArticle","url":"https://news.example/other","author":{"name":"Unrelated Person"}}]}</script>
+    <footer><a rel="author">Footer Person</a></footer><article><p>Andrew Symes spoke.</p></article>"""
+    attr = parse_article_html(html, 'https://news.example/story').attribution
+    assert attr['journalist']['names'] == ['Jane Smith', 'Alex Jones']
+
+
+def test_missing_attribution_is_not_guessed_from_domain_or_body():
+    from app.services.email.scraper import parse_article_html
+    from app.services.email.attribution import pasted_attribution
+    attr = parse_article_html('<article><p>Jane Smith interviewed CEO John Doe.</p></article>', 'https://famous-publication.example/story').attribution
+    assert attr['publication']['status'] == 'unavailable'
+    assert attr['journalist']['status'] == 'unavailable'
+    pasted = pasted_attribution('Publication: Example News\nBy Jane Smith\n' + COVERAGE)
+    assert pasted['publication']['names'] == ['Example News']
+    assert pasted['journalist']['names'] == ['Jane Smith']
+
+
+def test_manual_attribution_cannot_override_article(api, monkeypatch):
+    from app import routers_linkedin as linkedin
+    async def fetch(url):
+        return SimpleNamespace(title='Coverage', body=COVERAGE * 3, attribution={'publication': {'names': ['Source News'], 'status': 'source_identified', 'evidence': []}, 'journalist': {'names': [], 'status': 'unavailable', 'evidence': []}})
+    async def complete(messages):
+        data = json.loads(messages[1]['content'])
+        assert data['coverage']['publication'] == 'Source News'
+        assert data['coverage']['journalist'] == ''
+        return 'The article discusses OXCCU’s sustainable aviation fuel technology.'
+    monkeypatch.setattr(linkedin, 'fetch_article_http', fetch)
+    monkeypatch.setattr(provider, 'nonstream_openrouter', complete)
+    r=api.post('/api/v1/linkedin/1/generate', json={'url':'https://news.example/story', 'publication':'Made Up', 'journalist':'Fake Person'})
+    assert r.status_code == 200
+    assert 'Coverage: Source News' in r.json()['content']
+    assert 'Fake Person' not in r.json()['content']
+
+
+def test_visible_byline_and_meta_agree():
+    from app.services.email.scraper import parse_article_html
+    attr = parse_article_html('<meta name="author" content="Jane Smith"><main><div class="byline">By Jane Smith</div><p>John Doe said hello.</p></main>', 'https://news.example/story').attribution
+    assert attr['journalist']['names'] == ['Jane Smith']
+    assert len(attr['journalist']['evidence']) == 2

@@ -15,6 +15,7 @@ from .db import get_db
 from .models import Client, KnowledgeChunk, StyleSnippet
 from . import routers_generate as provider
 from .services.email.scraper import fetch_article_http
+from .services.email.attribution import pasted_attribution
 
 router = APIRouter(prefix="/api/v1/linkedin", tags=["linkedin"])
 
@@ -70,8 +71,6 @@ class Profile(BaseModel):
 class DraftRequest(BaseModel):
     coverage: str = Field(default="", max_length=60000)
     url: str = Field(default="", max_length=2048)
-    publication: str = Field(default="", max_length=256)
-    journalist: str = Field(default="", max_length=256)
     angle: str = Field(default="", max_length=2000)
     length: Literal["Short", "Standard"] = "Standard"
 
@@ -98,9 +97,22 @@ class DraftRequest(BaseModel):
         return self
 
 
+class ResolvedCoverage(DraftRequest):
+    publication: str = ""
+    journalist: str = ""
+
+
+def attributed_payload(payload, text, attribution):
+    return ResolvedCoverage(**{**payload.model_dump(), "coverage": text,
+        "publication": ", ".join(attribution["publication"]["names"]),
+        "journalist": ", ".join(attribution["journalist"]["names"])})
+
+
 async def resolve_coverage(payload: DraftRequest):
     if payload.coverage:
-        return payload, {"method": "pasted_text", "title": "Pasted article text", "publication": payload.publication, "excerpt": payload.coverage[:2000]}
+        attribution = pasted_attribution(payload.coverage)
+        resolved = attributed_payload(payload, payload.coverage, attribution)
+        return resolved, {"method": "pasted_text", "title": "Pasted article text", "publication": resolved.publication, "journalist": resolved.journalist, "attribution": attribution, "excerpt": payload.coverage[:2000]}
     try:
         article = await asyncio.wait_for(fetch_article_http(payload.url), timeout=35)
         body = article.body.strip()
@@ -110,8 +122,9 @@ async def resolve_coverage(payload: DraftRequest):
     except Exception:
         raise HTTPException(422, "We couldn’t read this article. The site may block access or require a subscription. Open ‘Paste article text instead’, paste the article, and generate again.")
     text = "\n\n".join(part for part in [article.title, body] if part)[:60000]
-    resolved = payload.model_copy(update={"coverage": text, "publication": payload.publication or article.publication or ""})
-    return resolved, {"method": "article_link", "title": article.title or "Article", "publication": resolved.publication, "excerpt": body[:2000]}
+    attribution = getattr(article, "attribution", None) or pasted_attribution("")
+    resolved = attributed_payload(payload, text, attribution)
+    return resolved, {"method": "article_link", "title": article.title or "Article", "publication": resolved.publication, "journalist": resolved.journalist, "attribution": attribution, "excerpt": body[:2000]}
 
 
 def get_client(db, client_id):
@@ -135,7 +148,7 @@ def save_profile(client_id: int, payload: Profile, db: Session = Depends(get_db)
 
 
 def suggested_mentions(profile: Profile, payload: DraftRequest):
-    evidence = "\n".join([payload.coverage, payload.publication, payload.journalist])
+    evidence = "\n".join([payload.coverage, getattr(payload, "publication", ""), getattr(payload, "journalist", "")])
     matches = []
     seen = set()
     for contact in profile.contacts:
@@ -157,7 +170,10 @@ informs relevance and voice, but is not evidence that something happened in this
 Lead with the media coverage and identify the outlet near the opening, then explain one useful takeaway.
 Do not copy relative dates such as today, yesterday or last week from the article. Use explicit source
 dates where useful, or omit timing entirely. Older coverage must not sound like a new event.
-Credit the supplied journalist/outlet when known, with brief thanks only where appropriate.
+The publication and journalist fields are source-extracted attribution, not guesses. Never infer
+a journalist from a quoted spokesperson, a person mentioned in the article, or a saved contact.
+If either attribution field is empty, do not invent it or credit anyone in its place.
+Do not write a byline, thanks, or credit line yourself; the application adds exact source attribution.
 Do not imply a passing mention is a full feature or endorsement. Preserve uncertainty and attribution.
 Do not invent quotations, superlatives, journalist identities, links, dates or @handles. Use plain names.
 Use short paragraphs and a simple invitation to read. No engagement bait, emoji by default, or generic
@@ -190,6 +206,13 @@ async def generate(client_id: int, payload: DraftRequest, db: Session = Depends(
     content = content.strip()
     # Do not allow provider-invented URLs to become publishable draft links.
     content = re.sub(r"https?://\S+", "", content).strip()
+    credits = []
+    if payload.publication:
+        credits.append("Coverage: " + payload.publication)
+    if payload.journalist:
+        credits.append("Byline: " + payload.journalist)
+    if credits:
+        content += "\n\n" + "\n".join(credits)
     if payload.url:
         content += "\n\nRead the full piece: " + payload.url
     if len(content) > 3000:

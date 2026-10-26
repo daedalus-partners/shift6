@@ -8,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup  # lightweight parser; install via backend requirements if missing
 from .polite import is_allowed, rate_limit, cached_get
+from .attribution import extract_attribution
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class ParsedArticle:
     body: str
     links: list[dict[str, str]]
     canonical_url: str | None
+    attribution: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class ArticleDocument:
     fetched_at: str
     content_sha256: str
     source_method: str
+    attribution: dict | None = None
 
 
 def parse_article_html(html: str, base_url: str) -> ParsedArticle:
@@ -75,7 +78,7 @@ def parse_article_html(html: str, base_url: str) -> ParsedArticle:
     content_tags = ["p", "blockquote", "q", "h1", "h2", "h3", "h4", "li"]
     parts = [node.get_text(" ", strip=True) for node in soup.find_all(content_tags)]
     body_text = "\n".join(part for part in parts if part)
-    return ParsedArticle(title, publication, desc, body_text, links, canonical_url)
+    return ParsedArticle(title, publication, desc, body_text, links, canonical_url, extract_attribution(soup, base_url))
 
 
 async def fetch_article_http(url: str) -> ArticleDocument:
@@ -112,6 +115,7 @@ async def fetch_article_http(url: str) -> ArticleDocument:
         fetched_at=datetime.now(timezone.utc).isoformat(),
         content_sha256=hashlib.sha256(parsed.body.encode("utf-8")).hexdigest(),
         source_method="direct_http",
+        attribution=parsed.attribution,
     )
 
 

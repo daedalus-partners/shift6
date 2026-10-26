@@ -66,3 +66,14 @@ Frontend build and focused TypeScript checks cover the new components. Live prov
 production verification require deployment access and configured OpenRouter credentials.
 
 Release is based on production master and excludes Phase 1 staging changes. When merging into the staging branch, reconcile the existing LinkedIn migration parent with its Phase 1 migration before upgrading. LinkedIn generation uses the existing expensive-request rate and concurrency limits.
+
+## Source attribution
+
+Publication and journalist are no longer manual inputs. Extract article JSON-LD publisher/author,
+Open Graph site name, meta author and article-scoped bylines. Keep exact values and evidence labels.
+Conflicting candidates cause abstention; unknown names are not inferred from domains, quotes,
+spokespeople or contacts. Related-article JSON-LD and footer author links are excluded. The UI
+shows attribution and evidence; the server appends exact source credit separately from model copy.
+For pasted fallback text, only explicit publication/byline lines are accepted. This cannot guarantee
+100% real-world correctness: publishers can omit or mislabel their own metadata. Missing/conflicting
+attribution is explicitly marked and omitted instead of guessed.

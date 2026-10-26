@@ -2,14 +2,12 @@ import React, { useEffect, useRef, useState } from 'react'
 import { button, control, ClientLinkedInProfile, Contact, jsonRequest } from './ClientLinkedInProfile'
 
 type Client = { id: number; name: string }
-type Draft = { content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; excerpt: string } }
+type Draft = { content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; journalist?: string; attribution?: Record<string, {status: string; evidence: {source: string; names: string[]}[]}>; excerpt: string } }
 export function LinkedInApp() {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState(0)
   const [coverage, setCoverage] = useState('')
   const [url, setUrl] = useState('')
-  const [publication, setPublication] = useState('')
-  const [journalist, setJournalist] = useState('')
   const [angle, setAngle] = useState('')
   const [length, setLength] = useState('Standard')
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -23,14 +21,14 @@ export function LinkedInApp() {
   }, [])
   useEffect(() => () => { generation.current++ }, [])
   const changeClient = (id: number) => {
-    generation.current++; setClientId(id); setDraft(null); setCoverage(''); setUrl(''); setPublication(''); setJournalist(''); setAngle(''); setMessage(''); setBusy(false)
+    generation.current++; setClientId(id); setDraft(null); setCoverage(''); setUrl(''); setAngle(''); setMessage(''); setBusy(false)
   }
   const generate = async (e: React.FormEvent) => {
     e.preventDefault()
     const request = ++generation.current
     setBusy(true); setMessage(''); setDraft(null)
     try {
-      const data = await jsonRequest(`/api/v1/linkedin/${clientId}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverage, url, publication, journalist, angle, length }) })
+      const data = await jsonRequest(`/api/v1/linkedin/${clientId}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverage, url, angle, length }) })
       if (request === generation.current) setDraft(data)
     } catch (e: any) { if (request === generation.current) setMessage(e.message) }
     finally { if (request === generation.current) setBusy(false) }
@@ -53,9 +51,8 @@ export function LinkedInApp() {
           <p>For paywalled or blocked articles, paste the text here. This text will be used instead of reading the link.</p>
           <textarea aria-label="Article text fallback" style={control} rows={8} minLength={80} maxLength={60000} value={coverage} onChange={e => setCoverage(e.target.value)} placeholder="Paste the article text, including the headline and byline where available." />
         </details>
+        <p style={{ fontSize: 13 }}>Publication and journalist are identified from the article. Missing or conflicting attribution is left uncredited.</p>
         {([
-          ['Publication (optional)', publication, setPublication, 'text', 256],
-          ['Journalist (optional)', journalist, setJournalist, 'text', 256],
           ['Focus or angle (optional)', angle, setAngle, 'text', 2000],
         ] as const).map(([label, value, setter, type, maxLength]) => <label key={label} style={{ display: 'block', margin: '14px 0' }}>{label}<input style={control} type={type} maxLength={maxLength} value={value} onChange={e => setter(e.target.value)} /></label>)}
         <label>Post length<select style={{ ...control, marginBottom: 16 }} value={length} onChange={e => setLength(e.target.value)}><option>Standard</option><option>Short</option></select></label>
@@ -67,7 +64,8 @@ export function LinkedInApp() {
           <label>Edit post<textarea style={{ ...control, marginTop: 8 }} rows={17} value={draft.content} onChange={e => setDraft({ ...draft, content: e.target.value })} /></label>
           <p style={{ color: draft.content.length > 3000 ? '#b00000' : '#555' }}>{draft.content.length.toLocaleString()} / 3,000 characters</p>
           <button style={button} type="button" disabled={!draft.content.trim() || draft.content.length > 3000} onClick={copy}>Copy post</button>
-          {draft.source && <details style={{ marginTop: 16 }}><summary>Coverage used for this post</summary><p><strong>{draft.source.title}</strong>{draft.source.publication ? ` · ${draft.source.publication}` : ''}</p><p style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>{draft.source.excerpt}</p></details>}
+          {draft.source && <div style={{ marginTop: 16 }}><strong>Attribution from the source</strong><p>Publication: {draft.source.publication || "Not clearly identified — omitted"}<br />Journalist / byline: {draft.source.journalist || "Not clearly identified — omitted"}</p></div>}
+          {draft.source && <details style={{ marginTop: 16 }}><summary>Coverage and attribution evidence</summary>{draft.source.attribution && Object.entries(draft.source.attribution).map(([key, value]) => <div key={key}><strong>{key}: {value.status.replaceAll("_", " ")}</strong><ul>{value.evidence.map((item, i) => <li key={i}>{item.source}: {item.names.join(", ")}</li>)}</ul></div>)}<p><strong>{draft.source.title}</strong>{draft.source.publication ? ` · ${draft.source.publication}` : ''}</p><p style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflowY: 'auto' }}>{draft.source.excerpt}</p></details>}
           <h3>Suggested tags</h3>
           <p>Copying a name does not create a live tag. In LinkedIn, type @ and select the matching account. Check these saved profiles first.</p>
           {draft.mentions.length ? <ul>{draft.mentions.map(m => <li key={m.url} style={{ marginBottom: 10 }}><a href={m.url} target="_blank" rel="noreferrer">{m.name}</a> · {m.role}<div style={{ fontSize: 13 }}>{m.reason}</div></li>)}</ul> : <p>No confirmed saved contacts matched. Verify the journalist or publication’s profile, then save it in the client profile for next time.</p>}
