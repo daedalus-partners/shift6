@@ -9,6 +9,7 @@ from .api.v1.coverage.router import router as coverage_router
 from .api.v1.settings.router import router as settings_router
 from .api.v1.tasks.router import router as tasks_router
 from .routers_retrieval import router as retrieval_router
+from .routers_linkedin import router as linkedin_router
 from .security import SecurityBoundaryMiddleware
 
 # Configure logging
@@ -53,6 +54,7 @@ else:
         allow_headers=["*"],
     )
 
+app.include_router(linkedin_router)
 app.include_router(api_v1_router, prefix="")
 app.include_router(email_router, prefix="/api/v1")
 app.include_router(coverage_router, prefix="/api/v1")
