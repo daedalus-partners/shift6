@@ -13,6 +13,7 @@ export function LinkedInApp() {
   const [angle, setAngle] = useState('')
   const [length, setLength] = useState('Standard')
   const [includeHashtags, setIncludeHashtags] = useState(false)
+  const [profileVersion, setProfileVersion] = useState(0)
   const [postMode, setPostMode] = useState<'article' | 'repost'>('article')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [busy, setBusy] = useState(false)
@@ -33,7 +34,7 @@ export function LinkedInApp() {
     setBusy(true); setMessage(''); setDraft(null); setPostMode('article')
     try {
       const data = await jsonRequest(`/api/v1/linkedin/${clientId}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coverage, url, angle, length, include_hashtags: includeHashtags }) })
-      if (request === generation.current) { setDraft(data); if (data.discovery?.posts?.some((p: any) => p.status === 'article_link_matched')) setPostMode('repost') }
+      if (request === generation.current) { setDraft(data); setProfileVersion(v => v + 1); if (data.discovery?.posts?.some((p: any) => p.status === 'article_link_matched')) setPostMode('repost') }
     } catch (e: any) { if (request === generation.current) setMessage(e.message) }
     finally { if (request === generation.current) setBusy(false) }
   }
@@ -47,7 +48,7 @@ export function LinkedInApp() {
     <p>Paste a coverage link. We’ll read the article and write the LinkedIn post in your client’s voice.</p>
     <label>Client <select style={{ ...control, width: 'auto', minWidth: 200 }} value={clientId} onChange={e => changeClient(Number(e.target.value))} disabled={!clients.length}>{!clients.length && <option value={0}>No clients available</option>}{clients.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
     {!clients.length && <p>Add a client in <a href="/quotes">Quote Generator</a> to get started.</p>}
-    {!!clientId && <ClientLinkedInProfile key={clientId} clientId={clientId} />}
+    {!!clientId && <ClientLinkedInProfile key={`${clientId}-${profileVersion}`} clientId={clientId} />}
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 24, marginTop: 24 }}>
       <form onSubmit={generate}>
         <label style={{ display: 'block' }}>Article link<input style={{ ...control, marginTop: 8 }} type="url" maxLength={2048} required={!coverage.trim()} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://publication.com/your-coverage" /></label>
