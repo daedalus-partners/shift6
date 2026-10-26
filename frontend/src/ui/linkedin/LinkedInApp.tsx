@@ -1,13 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { button, control, ClientLinkedInProfile, Contact, jsonRequest } from './ClientLinkedInProfile'
 
-type Client = { id: number; name: string }
+type Client = { id: number; name: string; slug: string }
 type Account = Contact & { status: string; reason: string; evidence_url: string }
 type Discovery = { accounts: Account[]; posts: {url: string; title: string; status: string; reason: string; excerpt: string}[]; status: string; publication_search?: string; journalist_search?: string; post_search: string }
 type Draft = { repost_content?: string; discovery?: Discovery; content: string; mentions: (Contact & { reason: string })[]; checks: string[]; source?: { title: string; publication: string; journalist?: string; attribution?: Record<string, {status: string; evidence: {source: string; names: string[]}[]}>; excerpt: string } }
 export function LinkedInApp() {
   const [clients, setClients] = useState<Client[]>([])
   const [clientId, setClientId] = useState(0)
+  const [clientsLoading, setClientsLoading] = useState(true)
+  const [showAddClient, setShowAddClient] = useState(false)
+  const [newClientName, setNewClientName] = useState('')
+  const [addingClient, setAddingClient] = useState(false)
+  const [clientError, setClientError] = useState('')
   const [coverage, setCoverage] = useState('')
   const [url, setUrl] = useState('')
   const [angle, setAngle] = useState('')
@@ -21,12 +26,38 @@ export function LinkedInApp() {
   const generation = useRef(0)
   useEffect(() => {
     let active = true
-    jsonRequest('/clients/').then(data => { if (active) { setClients(data); setClientId(data[0]?.id || 0) } }).catch(e => { if (active) setMessage(e.message) })
+    jsonRequest('/clients/').then(data => { if (active) { setClients(data); setClientId(data[0]?.id || 0) } }).catch(e => { if (active) setClientError(e.message) }).finally(() => { if (active) setClientsLoading(false) })
     return () => { active = false }
   }, [])
   useEffect(() => () => { generation.current++ }, [])
   const changeClient = (id: number) => {
     generation.current++; setClientId(id); setDraft(null); setCoverage(''); setUrl(''); setAngle(''); setMessage(''); setBusy(false)
+  }
+  const addClient = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const name = newClientName.trim()
+    if (!name || addingClient) return
+    const existing = clients.find(c => c.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())
+    if (existing) { changeClient(existing.id); setShowAddClient(false); setNewClientName(''); setClientError(''); return }
+    const slug = name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 64).replace(/^-+|-+$/g, '') || `client-${Date.now()}`
+    setAddingClient(true); setClientError('')
+    try {
+      const response = await fetch('/clients/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, slug }) })
+      if (response.status === 409) {
+        const updated: Client[] = await jsonRequest('/clients/')
+        setClients(updated)
+        const match = updated.find(c => c.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase())
+        if (!match) throw new Error('A client with a similar name already exists. Use a more specific name.')
+        changeClient(match.id)
+      } else {
+        if (!response.ok) throw new Error('Could not add this client. Please try again.')
+        const created: Client = await response.json()
+        setClients(current => [...current, created].sort((a, b) => a.slug.localeCompare(b.slug)))
+        changeClient(created.id)
+      }
+      setShowAddClient(false); setNewClientName('')
+    } catch (e: any) { setClientError(e.message || 'Could not add this client.') }
+    finally { setAddingClient(false) }
   }
   const generate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,8 +77,18 @@ export function LinkedInApp() {
   return <main style={{ maxWidth: 1100, margin: '0 auto', padding: 24, color: '#111' }}>
     <h1>LinkedIn Announcer</h1>
     <p>Paste a coverage link. We’ll read the article and write the LinkedIn post in your client’s voice.</p>
-    <label>Client <select style={{ ...control, width: 'auto', minWidth: 200 }} value={clientId} onChange={e => changeClient(Number(e.target.value))} disabled={!clients.length}>{!clients.length && <option value={0}>No clients available</option>}{clients.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select></label>
-    {!clients.length && <p>Add a client in <a href="/quotes">Quote Generator</a> to get started.</p>}
+    <label>Client <select aria-label="Client" style={{ ...control, width: 'auto', minWidth: 200 }} value={clientId} onChange={e => { if (e.target.value === '__add__') { setShowAddClient(true); setClientError('') } else { changeClient(Number(e.target.value)); setShowAddClient(false) } }} disabled={clientsLoading || addingClient}>
+      {!clients.length && <option value={0}>{clientsLoading ? 'Loading clients…' : 'Select or add a client'}</option>}
+      {clients.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}
+      <option value="__add__">+ Add client…</option>
+    </select></label>
+    {showAddClient && <form aria-label="Add client" onSubmit={addClient} style={{border:'1px solid #aaa',borderRadius:6,padding:16,marginTop:16,maxWidth:500}}>
+      <h2 style={{marginTop:0,fontSize:18}}>Add a client</h2>
+      <p>The client will be available in both LinkedIn Announcer and Quote Generator.</p>
+      <label>Client name<input autoFocus style={control} required maxLength={128} value={newClientName} onChange={e => setNewClientName(e.target.value)} placeholder="Company or client name" disabled={addingClient} /></label>
+      <div style={{display:'flex',gap:10,marginTop:12}}><button style={{...button,background:'#111',color:'#fff'}} disabled={addingClient || !newClientName.trim()}>{addingClient ? 'Adding…' : 'Add client'}</button><button type="button" style={button} disabled={addingClient} onClick={() => {setShowAddClient(false);setNewClientName('');setClientError('')}}>Cancel</button></div>
+    </form>}
+    {clientError && <p role="alert" style={{color:'#b00000'}}>{clientError}</p>}
     {!!clientId && <ClientLinkedInProfile key={`${clientId}-${profileVersion}`} clientId={clientId} />}
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 380px), 1fr))', gap: 24, marginTop: 24 }}>
       <form onSubmit={generate}>
